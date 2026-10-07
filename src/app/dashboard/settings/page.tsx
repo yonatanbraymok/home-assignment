@@ -1,14 +1,15 @@
+import Link from "next/link";
 import { Suspense } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { APP_NAME } from "@/lib/brand";
 import { getSettings, type CurrentUser } from "@/lib/dashboard/data";
-import { appUrl } from "@/lib/env";
-import { McpTokenControls } from "./mcp-token";
 import { formatDateTime, formatDay } from "@/lib/format";
 import { resetDateText, type ScopeStatus } from "@/lib/llm/budget-policy";
 
-export const metadata = { title: "Settings · Job Hunt Tracker" };
+export const metadata = { title: `Settings · ${APP_NAME}` };
 
 // Read-only, like the rest of the dashboard: connecting, disconnecting and deleting data happen in
 // Telegram, where each one asks the owner to confirm.
@@ -21,7 +22,7 @@ export default function SettingsPage() {
 }
 
 async function Settings() {
-  const { user, counts, budget, mcp } = await getSettings();
+  const { user, counts, budget } = await getSettings();
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-xl font-semibold">Settings</h1>
@@ -77,33 +78,16 @@ async function Settings() {
         </CardContent>
       </Card>
 
-      <Card id="mcp">
+      <Card>
         <CardHeader>
           <CardTitle>MCP access for other agents</CardTitle>
-          <CardDescription>
-            Let your own AI assistant (Claude, Cursor, a calendar agent…) read your tracker and ask for interview or assessment briefs. It can&apos;t change
-            anything: approving stays in Telegram.
-          </CardDescription>
+          <CardDescription>Let your own AI assistant read your tracker and ask for interview or assessment briefs. Read-only.</CardDescription>
           <CardAction>
-            {mcp.createdAt ? <Badge variant="secondary">Active</Badge> : <Badge variant="outline">No token</Badge>}
+            <Button asChild variant="outline" size="sm">
+              <Link href="/dashboard/developers">Open Developers</Link>
+            </Button>
           </CardAction>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-            <li>list_applications: your applications and their ids. No AI cost.</li>
-            <li>
-              generate_prep_brief: a brief for one application&apos;s next interview or assessment, built from its emails, with every quote
-              checked word for word. Uses your AI allowance; asking again is free until something changes, and it costs nothing when there&apos;s
-              nothing to prepare for.
-            </li>
-          </ul>
-          {mcp.createdAt && (
-            <p className="text-sm">
-              Token created {formatDateTime(mcp.createdAt)} · {mcp.lastUsedAt ? `last used ${formatDateTime(mcp.lastUsedAt)}` : "not used yet"}
-            </p>
-          )}
-          <McpTokenControls hasToken={Boolean(mcp.createdAt)} endpoint={appUrl("/api/mcp")} />
-        </CardContent>
       </Card>
 
       <Card>

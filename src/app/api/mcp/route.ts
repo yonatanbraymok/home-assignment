@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   const user = token ? await userForMcpToken(token) : null;
   if (!user) {
     return Response.json(
-      { error: "Missing or invalid token. Create one in the dashboard: Settings → MCP access." },
+      { error: "Missing or invalid token. Create one in the dashboard: Developers → Your token." },
       { status: 401, headers: { "WWW-Authenticate": 'Bearer realm="job-hunt-tracker"' } },
     );
   }

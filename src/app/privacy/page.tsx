@@ -1,14 +1,16 @@
 import Link from "next/link";
+import { LegalPage } from "@/components/legal-page";
+import { APP_NAME } from "@/lib/brand";
 import { botUrl } from "@/lib/env";
 
-export const metadata = { title: "Privacy · Job Hunt Tracker" };
+export const metadata = { title: `Privacy · ${APP_NAME}` };
 
 // Linked from Google's consent screen. Describes what the code actually does; keep it in sync.
 export default function PrivacyPage() {
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-10 text-sm leading-relaxed [&_h2]:mt-4 [&_h2]:text-base [&_h2]:font-semibold [&_li]:ml-5 [&_li]:list-disc">
-      <h1 className="text-2xl font-semibold">Privacy policy</h1>
-      <p className="text-muted-foreground">Job Hunt Tracker · last updated 8 October 2026</p>
+    <LegalPage>
+      <h1>Privacy policy</h1>
+      <p className="lead">Job Hunt Tracker · last updated 8 October 2026</p>
       <p>
         Job Hunt Tracker keeps a student&apos;s internship applications up to date from their Gmail. Every change is proposed in Telegram,
         and nothing changes until the student approves it.
@@ -47,7 +49,7 @@ export default function PrivacyPage() {
       <h2>Google user data</h2>
       <p>
         Job Hunt Tracker&apos;s use and transfer of information received from Google APIs adheres to the{" "}
-        <a className="underline" href="https://developers.google.com/terms/api-services-user-data-policy">
+        <a href="https://developers.google.com/terms/api-services-user-data-policy">
           Google API Services User Data Policy
         </a>
         , including the Limited Use requirements. Gmail data is used only to provide the tracker to you.
@@ -63,7 +65,7 @@ export default function PrivacyPage() {
         </li>
         <li>
           You can also remove access at any time at{" "}
-          <a className="underline" href="https://myaccount.google.com/permissions">
+          <a href="https://myaccount.google.com/permissions">
             myaccount.google.com/permissions
           </a>
           .
@@ -73,20 +75,20 @@ export default function PrivacyPage() {
       <h2>Contact</h2>
       <p>
         Message the bot at{" "}
-        <a className="underline" href={botUrl()}>
+        <a href={botUrl()}>
           {botUrl().replace("https://", "")}
         </a>
         .
       </p>
       <p>
-        <Link className="underline" href="/">
+        <Link href="/">
           Home
         </Link>{" "}
         ·{" "}
-        <Link className="underline" href="/terms">
+        <Link href="/terms">
           Terms
         </Link>
       </p>
-    </main>
+    </LegalPage>
   );
 }

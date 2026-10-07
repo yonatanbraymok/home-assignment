@@ -5,7 +5,7 @@ import { cache } from "react";
 import { sessionUserId } from "@/lib/auth/session";
 import { budgetStatus } from "@/lib/llm/budget";
 import { mcpTokenStatus } from "@/lib/mcp/auth";
-import { accountCountsFor, applicationDetailFor, findSessionUser, overviewFor } from "./queries";
+import { accountCountsFor, applicationDetailFor, findSessionUser, gettingStartedFor, overviewFor } from "./queries";
 
 // The dashboard's data access layer. Pages get data only through these functions, and each one
 // takes the user from the session cookie, never from the URL or a form.
@@ -53,7 +53,8 @@ export const getBudget = cache(async () => budgetStatus((await getCurrentUser())
 
 export async function getOverview() {
   const user = await getCurrentUser();
-  return { user, ...(await overviewFor(user.id)) };
+  const [overview, gettingStarted] = await Promise.all([overviewFor(user.id), gettingStartedFor(user.id)]);
+  return { user, ...overview, gettingStarted };
 }
 
 /** null when the application doesn't exist or belongs to someone else: the page can't tell which. */
@@ -63,8 +64,13 @@ export async function getApplicationDetail(applicationId: string) {
   return detail && { user, ...detail };
 }
 
+export async function getDevelopers() {
+  const user = await getCurrentUser();
+  return { user, mcp: await mcpTokenStatus(user.id) };
+}
+
 export async function getSettings() {
   const user = await getCurrentUser();
-  const [counts, budget, mcp] = await Promise.all([accountCountsFor(user.id), getBudget(), mcpTokenStatus(user.id)]);
-  return { user, counts, budget, mcp };
+  const [counts, budget] = await Promise.all([accountCountsFor(user.id), getBudget()]);
+  return { user, counts, budget };
 }

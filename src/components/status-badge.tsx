@@ -1,19 +1,21 @@
 import type { ApplicationStatus } from "@/generated/prisma/enums";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { STATUS_DESCRIPTION, STATUS_LABEL } from "@/lib/proposals/rules";
 
-// One colour per stage so the pipeline reads at a glance; Rejected uses the destructive style.
-const STAGE_STYLE: Partial<Record<ApplicationStatus, string>> = {
-  APPLIED: "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-200",
+// Semantic colours: gray = waiting, amber = assessment, blue = interview, green = offer, red = rejected.
+const STAGE_STYLE: Record<ApplicationStatus, string> = {
+  APPLIED: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
   ASSESSMENT: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
-  INTERVIEW: "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-200",
+  INTERVIEW: "bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200",
   OFFER: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
+  REJECTED: "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200",
+  WITHDRAWN: "border-border bg-transparent text-muted-foreground",
 };
 
-export function StatusBadge({ status }: { status: ApplicationStatus }) {
-  const variant = status === "REJECTED" ? "destructive" : status === "WITHDRAWN" ? "outline" : "secondary";
+export function StatusBadge({ status, className }: { status: ApplicationStatus; className?: string }) {
   return (
-    <Badge variant={variant} className={STAGE_STYLE[status]} title={STATUS_DESCRIPTION[status]}>
+    <Badge variant="secondary" className={cn(STAGE_STYLE[status], className)} title={STATUS_DESCRIPTION[status]}>
       {STATUS_LABEL[status]}
     </Badge>
   );

@@ -116,6 +116,8 @@ model User {
   // When every email from before the current connection was read and the review summary sent.
   // Until then, proposals from those emails are held for the one-at-a-time review.
   backfillDoneAt       DateTime?
+  // Set by /demo while sample emails are loaded (no Gmail); cleared by /demo_reset or /connect.
+  demoAt               DateTime?
   mcpTokenHash         String?   @unique // sha256 of the bearer token; plaintext shown once
   mcpTokenCreatedAt    DateTime?
   createdAt            DateTime  @default(now())

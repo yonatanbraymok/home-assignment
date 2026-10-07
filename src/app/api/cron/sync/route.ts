@@ -9,7 +9,9 @@ import { ensureBudgetNotices } from "@/lib/telegram/budget-notices";
 
 export const maxDuration = 60;
 
-const ANALYZE_PER_USER = 10;
+// Runs every 5 minutes (Supabase pg_cron). 25 emails is about 25–50 s of model calls, so a large
+// first sync finishes in about an hour; the deadline below stops a run before the 60 s limit.
+const ANALYZE_PER_USER = 25;
 // Leave headroom under maxDuration; users not reached go first next time.
 const SYNC_BUDGET_MS = 25_000;
 const TOTAL_BUDGET_MS = 45_000;
@@ -27,7 +29,7 @@ export async function POST(req: Request) {
   for (const { userId } of synced) {
     if (Date.now() - startedAt > TOTAL_BUDGET_MS) break;
     try {
-      analyzed.push({ userId, ...(await analyzePendingEmails(userId, ANALYZE_PER_USER)) });
+      analyzed.push({ userId, ...(await analyzePendingEmails(userId, ANALYZE_PER_USER, { deadline: startedAt + TOTAL_BUDGET_MS })) });
       await quietly("review summary", finishBackfill(userId));
     } catch (err) {
       // Details go to the server log only; the response must not carry internals.

@@ -45,6 +45,8 @@ export function helpText() {
     "",
     "Your past emails (from before you connected Gmail) come as one review, one card at a time. ⏭ Later moves a card to the end; /pending continues where you stopped.",
     "",
+    "I check your inbox every 5 minutes on my own. Send /sync to check right now, e.g. right after a test email.",
+    "",
     "Commands",
     ...COMMANDS.map((c) => `/${c.command} – ${c.description}`),
   ].join("\n");

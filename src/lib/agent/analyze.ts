@@ -33,7 +33,12 @@ export type AnalysisSummary = {
  * Classifies a user's queued emails one by one (oldest first, so proposals follow the real order
  * of events) and turns verified results into proposals.
  */
-export async function analyzePendingEmails(userId: string, limit: number, opts: { budget?: BudgetMode } = {}): Promise<AnalysisSummary> {
+/** `deadline` (epoch ms): stop claiming new emails after it; the rest wait for the next run. */
+export async function analyzePendingEmails(
+  userId: string,
+  limit: number,
+  opts: { budget?: BudgetMode; deadline?: number } = {},
+): Promise<AnalysisSummary> {
   const summary: AnalysisSummary = { analyzed: 0, proposals: 0, held: 0, noChange: 0, notJobRelated: 0, unverified: 0, failed: 0 };
   if (!llmConfigured()) return { ...summary, skippedNotConfigured: true };
   const mode = opts.budget ?? (await budgetStatus(userId));
@@ -50,6 +55,7 @@ export async function analyzePendingEmails(userId: string, limit: number, opts: 
   const emails = queued.filter((e) => attemptsOf(e.analysis) < MAX_ATTEMPTS).slice(0, limit);
 
   for (const email of emails) {
+    if (opts.deadline && Date.now() > opts.deadline) break;
     // Claim it first: if the cron run and a /sync overlap, only one of them analyses each email.
     const { count: claimed } = await db.emailMessage.updateMany({
       where: { id: email.id, OR: [{ state: { in: [...CLAIMABLE] } }, staleClaim()] },

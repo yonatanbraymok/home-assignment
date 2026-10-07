@@ -2,32 +2,36 @@ import type { ApplicationStatus } from "@/generated/prisma/enums";
 import { isAtsDomain } from "@/lib/gmail/prefilter";
 
 // Deterministic matching of a classified email to one of the user's applications.
-// The model only extracts the company and role as written; this code decides which record it is.
+// The model only extracts what the email says (company, role, job ID); this code decides which
+// record it is, and says "ambiguous" instead of guessing when the email can't tell them apart.
 
 export type MatchableApplication = {
   id: string;
   company: string;
   companyDomain: string | null;
   roleTitle: string;
+  jobRef: string | null;
   status: ApplicationStatus;
 };
 
 export type MatchResult<A extends MatchableApplication = MatchableApplication> =
   | { kind: "matched"; application: A; strength: "strong" | "weak"; warnings: string[] }
+  | { kind: "ambiguous"; candidates: A[]; warnings: string[] }
   | { kind: "none"; warnings: string[] };
 
+export type Extracted = { company: string | null; roleTitle: string | null; jobRef: string | null };
+
 const SAME_ROLE_THRESHOLD = 0.5;
+// A role match only wins outright if it beats the runner-up by this much.
+const CLEAR_WINNER_MARGIN = 0.25;
 const PERSONAL_MAIL_DOMAINS = ["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com", "walla.co.il"];
 
-export function matchApplication<A extends MatchableApplication>(
-  extracted: { company: string | null; roleTitle: string | null },
-  senderDomain: string,
-  applications: A[],
-): MatchResult<A> {
+export function matchApplication<A extends MatchableApplication>(extracted: Extracted, senderDomain: string, applications: A[]): MatchResult<A> {
   const company = extracted.company ? normalizeCompany(extracted.company) : "";
   const domain = companyDomainFor(senderDomain);
+  const label = (a: A) => `${a.company} · ${a.roleTitle}${a.jobRef ? ` (#${a.jobRef})` : ""}`;
 
-  const scored = applications.flatMap((app) => {
+  const atCompany = applications.flatMap((app) => {
     const appCompany = normalizeCompany(app.company);
     const domainHit = Boolean(domain && app.companyDomain && domainMatches(domain, app.companyDomain));
     if (domainHit || (company && appCompany === company)) return [{ app, strong: true }];
@@ -37,29 +41,46 @@ export function matchApplication<A extends MatchableApplication>(
     }
     return [];
   });
-  if (scored.length === 0) return { kind: "none", warnings: [] };
+  if (atCompany.length === 0) return { kind: "none", warnings: [] };
 
-  const label = (a: A) => `${a.company} · ${a.roleTitle}`;
-  if (!extracted.roleTitle) {
-    const [first, ...others] = scored;
-    const warnings = ["The email doesn't name the role"];
-    if (others.length) warnings.push(`Also possible: ${others.map((s) => label(s.app)).join(", ")}`);
-    return { kind: "matched", application: first.app, strength: "weak", warnings };
+  // 1. A job ID decides on its own: same ID is the same application, a different ID is a different one.
+  let pool = atCompany;
+  if (extracted.jobRef) {
+    const ref = normalizeJobRef(extracted.jobRef);
+    const exact = atCompany.find((c) => c.app.jobRef && normalizeJobRef(c.app.jobRef) === ref);
+    if (exact) return { kind: "matched", application: exact.app, strength: "strong", warnings: [] };
+    pool = atCompany.filter((c) => !c.app.jobRef);
+    if (pool.length === 0) {
+      return { kind: "none", warnings: [`Different job ID from what you track: ${atCompany.map((c) => label(c.app)).join(", ")}`] };
+    }
   }
 
-  const ranked = scored
-    .map((s) => ({ ...s, similarity: roleSimilarity(extracted.roleTitle!, s.app.roleTitle) }))
+  // 2. No usable job ID: fall back to the role title.
+  if (!extracted.roleTitle) {
+    if (pool.length === 1) return { kind: "matched", application: pool[0].app, strength: "weak", warnings: ["The email doesn't name the role"] };
+    return { kind: "ambiguous", candidates: pool.map((c) => c.app), warnings: ["The email doesn't name the role or a job ID"] };
+  }
+
+  const ranked = pool
+    .map((c) => ({ ...c, similarity: roleSimilarity(extracted.roleTitle!, c.app.roleTitle) }))
     .sort((a, b) => b.similarity - a.similarity);
-  const best = ranked[0];
-  if (best.similarity < SAME_ROLE_THRESHOLD) {
+  const plausible = ranked.filter((r) => r.similarity >= SAME_ROLE_THRESHOLD);
+  if (plausible.length === 0) {
     // Same company, different role: a separate application.
     return { kind: "none", warnings: [`You also track ${ranked.map((r) => label(r.app)).join(", ")}`] };
   }
-  const runnersUp = ranked.slice(1).filter((r) => r.similarity >= SAME_ROLE_THRESHOLD);
+  const [best, runnerUp] = plausible;
+  if (runnerUp && best.similarity - runnerUp.similarity < CLEAR_WINNER_MARGIN) {
+    return {
+      kind: "ambiguous",
+      candidates: plausible.map((p) => p.app),
+      warnings: [`Several ${best.app.company} applications fit this role${extracted.jobRef ? "" : " and the email has no job ID"}`],
+    };
+  }
   const warnings = [];
   if (!best.strong) warnings.push(`Company matched by a similar name ("${extracted.company}" ~ "${best.app.company}")`);
-  if (runnersUp.length) warnings.push(`Also possible: ${runnersUp.map((r) => label(r.app)).join(", ")}`);
-  return { kind: "matched", application: best.app, strength: best.strong && !runnersUp.length ? "strong" : "weak", warnings };
+  if (runnerUp) warnings.push(`Also possible: ${label(runnerUp.app)}`);
+  return { kind: "matched", application: best.app, strength: best.strong && !runnerUp ? "strong" : "weak", warnings };
 }
 
 export function normalizeCompany(name: string): string {
@@ -77,9 +98,17 @@ export function normalizeRole(title: string): string {
   return title.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
 }
 
-/** Key that makes "create this application" idempotent: one record per company + role. */
-export function dedupeKey(company: string, roleTitle: string): string {
-  return `${normalizeCompany(company)}|${normalizeRole(roleTitle)}`;
+/** "JR-12345", "jr 12345" and "#JR12345" are the same job ID. */
+export function normalizeJobRef(ref: string): string {
+  return ref.normalize("NFKC").toUpperCase().replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+/**
+ * Key that makes "create this application" idempotent. With a job ID it identifies the job;
+ * without one, same company + same title is treated as the same application.
+ */
+export function dedupeKey(company: string, roleTitle: string, jobRef?: string | null): string {
+  return jobRef ? `${normalizeCompany(company)}|#${normalizeJobRef(jobRef)}` : `${normalizeCompany(company)}|${normalizeRole(roleTitle)}`;
 }
 
 // Years and seasons differ between emails about the same role ("SWE Intern" vs "SWE Intern - Summer 2027").

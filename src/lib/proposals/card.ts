@@ -1,5 +1,6 @@
 import { InlineKeyboard } from "grammy";
 import type { ApplicationStatus, Confidence, ProposalKind, ProposalState } from "@/generated/prisma/enums";
+import type { Candidate } from "./create";
 import { STATUS_LABEL } from "./rules";
 
 // Proposal cards are rendered with Telegram's HTML parse mode; every dynamic value is escaped.
@@ -7,13 +8,17 @@ import { STATUS_LABEL } from "./rules";
 // The target users are students in Israel; dates on cards are shown in local time.
 const DISPLAY_TIME_ZONE = "Asia/Jerusalem";
 const MAX_QUOTE_CHARS = 600;
+const MAX_BUTTON_CHARS = 60;
 
 export type CardData = {
   id: string;
   kind: ProposalKind;
   state: ProposalState;
+  applicationId: string | null;
   company: string;
   roleTitle: string;
+  jobRef: string | null;
+  candidates: Candidate[] | null;
   fromStatus: ApplicationStatus | null;
   toStatus: ApplicationStatus;
   reasoning: string;
@@ -22,7 +27,7 @@ export type CardData = {
   warnings: string[];
   expiresAt: Date;
   failureReason: string | null;
-  currentStatus?: ApplicationStatus | null; // for STALE: what the application is now
+  application?: { status: ApplicationStatus; roleTitle: string; jobRef: string | null } | null; // current state
   email: { fromAddress: string; fromName: string | null; subject: string; receivedAt: Date; gmailThreadId: string };
   gmailAddress: string | null;
 };
@@ -40,18 +45,31 @@ export function gmailThreadUrl(gmailAddress: string | null, threadId: string): s
   return `https://mail.google.com/mail/u/${encodeURIComponent(gmailAddress ?? "0")}/#all/${threadId}`;
 }
 
+/** A "which application is this?" card the owner hasn't answered yet. */
+export function needsChoice(card: Pick<CardData, "candidates" | "applicationId">): boolean {
+  return Boolean(card.candidates?.length) && !card.applicationId;
+}
+
 export function renderCard(card: CardData): { text: string; keyboard: InlineKeyboard } {
   const e = escapeHtml;
+  const choosing = needsChoice(card);
+  const roleTitle = card.application?.roleTitle ?? card.roleTitle;
+  const jobRef = card.application?.jobRef ?? card.jobRef;
+  const title =
+    card.kind === "CREATE_APPLICATION" ? "Track a new application" : choosing ? "Which application is this?" : "Proposed update";
   const change =
     card.kind === "CREATE_APPLICATION"
       ? `New application · ${STATUS_LABEL[card.toStatus]}`
-      : `${STATUS_LABEL[card.fromStatus!]} → ${STATUS_LABEL[card.toStatus]}`;
+      : choosing
+        ? `The email says: ${STATUS_LABEL[card.toStatus]}`
+        : `${STATUS_LABEL[card.fromStatus!]} → ${STATUS_LABEL[card.toStatus]}`;
   const quote = card.evidenceQuote.length > MAX_QUOTE_CHARS ? `${card.evidenceQuote.slice(0, MAX_QUOTE_CHARS)}…` : card.evidenceQuote;
   const sender = card.email.fromName ? `${card.email.fromName} <${card.email.fromAddress}>` : card.email.fromAddress;
+  const savesJobRef = card.state === "PENDING" && !choosing && card.jobRef && card.application && !card.application.jobRef;
 
   const lines = [
-    `📩 <b>${card.kind === "CREATE_APPLICATION" ? "Track a new application" : "Proposed update"} · ${e(card.company)}</b>`,
-    e(card.roleTitle),
+    `📩 <b>${title} · ${e(card.company)}</b>`,
+    e(roleTitle) + (jobRef ? ` · Job ID ${e(jobRef)}` : ""),
     `<b>${e(change)}</b>`,
     "",
     `<b>Why:</b> ${e(card.reasoning)}`,
@@ -63,36 +81,52 @@ export function renderCard(card: CardData): { text: string; keyboard: InlineKeyb
     `Received: ${formatDate(card.email.receivedAt)}`,
     `Confidence: <b>${card.confidence}</b>`,
     ...card.warnings.map((w) => `⚠️ ${e(w)}`),
+    ...(savesJobRef ? [`Approving also saves job ID ${e(card.jobRef!)} to this application.`] : []),
     "",
-    statusLine(card),
+    statusLine(card, choosing),
   ];
 
   const keyboard = new InlineKeyboard().url("🔗 Open email", gmailThreadUrl(card.gmailAddress, card.email.gmailThreadId)).row();
-  if (card.state === "PENDING") keyboard.text("✅ Approve", `p:a:${card.id}`).text("❌ Reject", `p:r:${card.id}`);
-  if (card.state === "FAILED") keyboard.text("🔁 Retry", `p:x:${card.id}`).text("❌ Reject", `p:r:${card.id}`);
+  const open = card.state === "PENDING" || card.state === "FAILED";
+  if (open && choosing) {
+    card.candidates!.forEach((c, i) => keyboard.text(truncate(c.label), `p:c:${card.id}:${i}`).row());
+    keyboard.text("➕ It's a new application", `p:c:${card.id}:n`).row();
+    keyboard.text("❌ Ignore", `p:r:${card.id}`);
+  } else if (card.state === "PENDING") {
+    keyboard.text("✅ Approve", `p:a:${card.id}`).text("❌ Reject", `p:r:${card.id}`);
+  } else if (card.state === "FAILED") {
+    keyboard.text("🔁 Retry", `p:x:${card.id}`).text("❌ Reject", `p:r:${card.id}`);
+  }
   return { text: lines.join("\n"), keyboard };
 }
 
-function statusLine(card: CardData): string {
+function truncate(text: string): string {
+  return text.length > MAX_BUTTON_CHARS ? `${text.slice(0, MAX_BUTTON_CHARS - 1)}…` : text;
+}
+
+function statusLine(card: CardData, choosing: boolean): string {
   const e = escapeHtml;
+  const name = `${e(card.company)} · ${e(card.application?.roleTitle ?? card.roleTitle)}`;
   switch (card.state) {
     case "PENDING":
-      return `<i>Nothing changes until you tap Approve. Expires ${formatDate(card.expiresAt)}.</i>`;
+      return choosing
+        ? `<i>Tap the application this email is about to mark it ${STATUS_LABEL[card.toStatus]}. Nothing changes until you tap. Expires ${formatDate(card.expiresAt)}.</i>`
+        : `<i>Nothing changes until you tap Approve. Expires ${formatDate(card.expiresAt)}.</i>`;
     case "EXECUTED":
       return card.kind === "CREATE_APPLICATION"
-        ? `✅ <b>Approved.</b> Now tracking ${e(card.company)} as ${STATUS_LABEL[card.toStatus]}.`
-        : `✅ <b>Approved.</b> ${e(card.company)} is now ${STATUS_LABEL[card.toStatus]}.`;
+        ? `✅ <b>Approved.</b> Now tracking ${name} as ${STATUS_LABEL[card.toStatus]}.`
+        : `✅ <b>Approved.</b> ${name} is now ${STATUS_LABEL[card.toStatus]}.`;
     case "REJECTED":
-      return "❌ <b>Rejected.</b> Nothing was changed.";
+      return choosing ? "❌ <b>Ignored.</b> Nothing was changed." : "❌ <b>Rejected.</b> Nothing was changed.";
     case "EXPIRED":
       return "⌛ <b>Expired</b> without a decision. Nothing was changed.";
     case "SUPERSEDED":
       return "↪️ <b>Replaced</b> by a newer proposal for the same application. Nothing was changed.";
     case "STALE":
-      return card.currentStatus
-        ? `⚠️ <b>Not applied:</b> the application changed since this proposal (it is now ${STATUS_LABEL[card.currentStatus]}).`
+      return card.application && card.kind === "UPDATE_STATUS"
+        ? `⚠️ <b>Not applied:</b> the application changed since this proposal (it is now ${STATUS_LABEL[card.application.status]}).`
         : "⚠️ <b>Not applied:</b> this application is already being tracked.";
     case "FAILED":
-      return `❌ <b>Couldn't apply it. Nothing was changed.</b> ${e(card.failureReason ?? "")} You can retry.`;
+      return `❌ <b>Couldn't apply it. Nothing was changed.</b> ${e(card.failureReason ?? "")} You can try again.`;
   }
 }

@@ -1,5 +1,5 @@
 // Eval: the approval action refuses what it should refuse (stranger, double tap, stale, duplicate
-// create, rejected, expired) and proposals follow email order. Runs against the configured database
+// create, rejected, expired, blind approve of an ambiguous card) and proposals follow email order. Runs against the configured database
 // with a throwaway user that is deleted at the end. Run: npm run eval:approval
 
 import assert from "node:assert/strict";
@@ -61,7 +61,7 @@ async function main() {
   // 5. supersede rules via proposeFromEmail (card sends fail quietly: fake chat)
   const appRow = await db.jobApplication.findUniqueOrThrow({ where: { id: app.id } });
   const match = { kind: "matched" as const, application: appRow, strength: "strong" as const, warnings: [] };
-  const cls = (category: "REJECTION" | "OFFER") => ({ category, company: "Microsoft", roleTitle: "SWE Intern", evidenceQuote: "q", reasoning: "r", confidence: "HIGH" as const });
+  const cls = (category: "REJECTION" | "OFFER") => ({ category, company: "Microsoft", roleTitle: "SWE Intern", jobRef: null, evidenceQuote: "q", reasoning: "r", confidence: "HIGH" as const });
   const newer = await mkEmail("e7", 1), older = await mkEmail("e8", 3), newest = await mkEmail("e9", 0);
   const a = await proposeFromEmail({ userId: user.id, email: newer, classification: cls("OFFER"), match, wordingSupportsCategory: true });
   const b = await proposeFromEmail({ userId: user.id, email: older, classification: cls("REJECTION"), match, wordingSupportsCategory: true });
@@ -73,6 +73,31 @@ async function main() {
   const c2row = await db.statusProposal.findUniqueOrThrow({ where: { id: c2.proposalId! } });
   assert.equal(c2row.confidence, "LOW");
   console.log("✔ newer email supersedes, older email doesn't; weak wording caps confidence at LOW:", c2row.warnings);
+
+  // 6. "which application is this?": no blind approve, choice applies to the picked one, job ID is saved
+  const az1 = await db.jobApplication.create({ data: { userId: user.id, company: "Amazon", roleTitle: "SDE Intern", dedupeKey: "amazon|sde intern a", status: "APPLIED", source: "MANUAL" } });
+  const az2 = await db.jobApplication.create({ data: { userId: user.id, company: "Amazon", roleTitle: "SDE Intern", dedupeKey: "amazon|sde intern b", status: "APPLIED", source: "MANUAL" } });
+  const candidates = [az1, az2].map((a) => ({ applicationId: a.id, label: a.roleTitle, status: a.status }));
+  const amb = (emailId: string) =>
+    db.statusProposal.create({ data: { ...base, company: "Amazon", roleTitle: "SDE Intern", emailId, kind: "UPDATE_STATUS", toStatus: "REJECTED", jobRef: "2881122", candidates } });
+  const e10 = await mkEmail("e10", 1);
+  const p10 = await amb(e10.id);
+  assert.equal((await approveProposal(p10.id, OWNER)).kind, "needs-choice");
+  assert.equal((await approveProposal(p10.id, STRANGER, 1)).kind, "not-yours");
+  assert.equal((await approveProposal(p10.id, OWNER, 1)).kind, "executed");
+  const [after1, after2] = await Promise.all([az1, az2].map((a) => db.jobApplication.findUniqueOrThrow({ where: { id: a.id } })));
+  assert.deepEqual([after1.status, after2.status, after2.jobRef], ["APPLIED", "REJECTED", "2881122"]);
+  console.log("✔ ambiguous card: approve needs a choice, the choice applies to the picked application and saves its job ID");
+
+  const e11 = await mkEmail("e11", 1);
+  const p11 = await amb(e11.id); // button says az2 is APPLIED, but it is REJECTED now
+  assert.equal((await approveProposal(p11.id, OWNER, 1)).kind, "stale");
+  const e12 = await mkEmail("e12", 1);
+  const p12 = await db.statusProposal.create({ data: { ...base, company: "Amazon", roleTitle: "Front-End Intern", emailId: e12.id, kind: "UPDATE_STATUS", toStatus: "ASSESSMENT", jobRef: null, candidates } });
+  assert.equal((await approveProposal(p12.id, OWNER, "new")).kind, "executed");
+  assert.equal((await db.statusProposal.findUniqueOrThrow({ where: { id: p12.id } })).kind, "CREATE_APPLICATION");
+  assert.equal(await db.jobApplication.count({ where: { userId: user.id, company: "Amazon" } }), 3);
+  console.log("✔ a stale choice is refused; 'it's a new application' creates one");
 
   const audit = await db.actionLog.groupBy({ by: ["action"], where: { userId: user.id }, _count: true });
   console.log("audit:", Object.fromEntries(audit.map((x) => [x.action, x._count])));

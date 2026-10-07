@@ -2,6 +2,7 @@ import { GrammyError } from "grammy";
 import { db } from "@/lib/db";
 import { telegramApi } from "@/lib/telegram/notify";
 import { renderCard, type CardData } from "./card";
+import type { Candidate } from "./create";
 
 // Sending and re-rendering proposal cards. The database is the source of truth; a card is only
 // a view of it, so every edit re-reads the proposal and renders its current state.
@@ -12,11 +13,11 @@ async function loadCard(proposalId: string) {
     include: {
       email: { select: { fromAddress: true, fromName: true, subject: true, receivedAt: true, gmailThreadId: true } },
       user: { select: { gmailAddress: true, telegramChatId: true } },
-      application: { select: { status: true } },
+      application: { select: { status: true, roleTitle: true, jobRef: true } },
     },
   });
   if (!p) return null;
-  const card: CardData = { ...p, currentStatus: p.application?.status ?? null, gmailAddress: p.user.gmailAddress };
+  const card: CardData = { ...p, candidates: (p.candidates as Candidate[] | null) ?? null, gmailAddress: p.user.gmailAddress };
   return { card, userChatId: p.user.telegramChatId, chatId: p.telegramChatId, messageId: p.telegramMessageId };
 }
 

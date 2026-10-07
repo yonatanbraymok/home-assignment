@@ -25,3 +25,15 @@ export function quoteAppearsIn(quote: string, ...sources: (string | null | undef
   if (needle.length < MIN_QUOTE_CHARS) return false;
   return sources.some((source) => source && normalizeForMatch(source).includes(needle));
 }
+
+/**
+ * True if a job ID the model extracted is really in the email, as a whole token
+ * ("12345" must not match inside "512345"). IDs can be short, so no minimum length beyond 3.
+ */
+export function jobRefAppearsIn(ref: string, ...sources: (string | null | undefined)[]): boolean {
+  const needle = normalizeForMatch(ref).replace(/^#/, "");
+  if (needle.length < 3) return false;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, "u");
+  return sources.some((source) => source && pattern.test(normalizeForMatch(source)));
+}

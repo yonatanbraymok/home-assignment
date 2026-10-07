@@ -124,7 +124,8 @@ model JobApplication {
   company         String
   companyDomain   String? // e.g. "microsoft.com": strongest matching signal
   roleTitle       String
-  dedupeKey       String // normalize(company) + "|" + normalize(roleTitle)
+  jobRef          String? // employer's job/requisition ID as written in an email, when one was given
+  dedupeKey       String // normalize(company) + "|#" + normalize(jobRef), or "|" + normalize(roleTitle) without one
   location        String?
   status          ApplicationStatus @default(APPLIED)
   source          ApplicationSource
@@ -180,6 +181,10 @@ model StatusProposal {
   toStatus                ApplicationStatus
   company                 String
   roleTitle               String
+  jobRef                  String? // job ID from the email (verified verbatim); saved to the application on approval
+  // Set when the email can't be tied to one application: [{ applicationId, label, status }].
+  // The card then asks the owner which one it is, and applicationId stays null until they choose.
+  candidates              Json?
   reasoning               String // the "why" shown to the approver
   evidenceQuote           String // verified verbatim substring of the email body
   confidence              Confidence

@@ -69,6 +69,7 @@ export const DECISION_TOAST: Record<Decision["kind"], string> = {
   expired: "This proposal expired. Nothing was changed.",
   "not-yours": "Only the owner of this application can decide this.",
   "not-found": "This proposal no longer exists.",
+  "needs-choice": "Tap the application this email is about.",
 };
 
 export const NOT_REGISTERED_TEXT = "Send /start first so I can register you.";

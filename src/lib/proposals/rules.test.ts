@@ -27,6 +27,9 @@ const card: CardData = {
   id: "cl1",
   kind: "UPDATE_STATUS",
   state: "PENDING",
+  applicationId: "app1",
+  jobRef: null,
+  candidates: null,
   company: "AT&T <Labs>",
   roleTitle: "SWE Intern",
   fromStatus: "APPLIED",
@@ -55,4 +58,21 @@ test("card escapes every dynamic value and shows buttons only while pending", ()
 
   assert.equal(escapeHtml("a<b>&c"), "a&lt;b&gt;&amp;c");
   assert.equal(gmailThreadUrl("dana@gmail.com", "18f"), "https://mail.google.com/mail/u/dana%40gmail.com/#all/18f");
+});
+
+test("a which-application card offers each candidate, 'new' and 'ignore' instead of Approve", () => {
+  const ambiguous: CardData = {
+    ...card,
+    applicationId: null,
+    fromStatus: null,
+    candidates: [
+      { applicationId: "a1", label: "SDE Intern #2876543 (Applied)", status: "APPLIED" },
+      { applicationId: "a2", label: "SDE Intern #2881122 (Applied)", status: "APPLIED" },
+    ],
+  };
+  const { text, keyboard } = renderCard(ambiguous);
+  assert.match(text, /Which application is this\?/);
+  assert.match(text, /The email says: Rejected/);
+  const data = keyboard.inline_keyboard.flat().flatMap((b) => ("callback_data" in b ? [b.callback_data] : []));
+  assert.deepEqual(data, ["p:c:cl1:0", "p:c:cl1:1", "p:c:cl1:n", "p:r:cl1"]);
 });

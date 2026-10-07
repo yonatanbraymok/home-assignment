@@ -41,11 +41,14 @@ function findUser(telegramId: number) {
 }
 
 function registerHandlers(bot: Bot) {
-  // Approve / Reject / Retry buttons on proposal cards. Ownership is checked in decide.ts.
-  bot.callbackQuery(/^p:([arx]):([a-z0-9]+)$/, async (ctx) => {
-    const [, action, proposalId] = ctx.match;
+  // Buttons on proposal cards: a(pprove), r(eject), x (retry), c(hoose) which application.
+  // Ownership is checked in decide.ts.
+  bot.callbackQuery(/^p:([arxc]):([a-z0-9]+)(?::(\d+|n))?$/, async (ctx) => {
+    const [, action, proposalId, choiceRaw] = ctx.match;
     const telegramUserId = BigInt(ctx.from.id);
-    const decision = action === "r" ? await rejectProposal(proposalId, telegramUserId) : await approveProposal(proposalId, telegramUserId);
+    const choice = action === "c" && choiceRaw ? (choiceRaw === "n" ? "new" : Number(choiceRaw)) : undefined;
+    const decision =
+      action === "r" ? await rejectProposal(proposalId, telegramUserId) : await approveProposal(proposalId, telegramUserId, choice);
     await ctx.answerCallbackQuery({ text: DECISION_TOAST[decision.kind], show_alert: decision.kind === "not-yours" });
     if (decision.kind === "not-yours" || decision.kind === "not-found") return;
 

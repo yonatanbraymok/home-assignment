@@ -7,7 +7,7 @@ import { proposeFromEmail } from "@/lib/proposals/create";
 import { classifyEmail, type Classification } from "./classify";
 import { matchApplication } from "./match";
 import { wordingSupportsCategory } from "./signals";
-import { quoteAppearsIn } from "./verify-quote";
+import { jobRefAppearsIn, quoteAppearsIn } from "./verify-quote";
 
 const MAX_ATTEMPTS = 3;
 
@@ -57,6 +57,12 @@ export async function analyzePendingEmails(userId: string, limit: number): Promi
     summary.analyzed++;
 
     const quoteVerified = quoteAppearsIn(classification.evidenceQuote, email.subject, email.bodyText);
+    // A job ID the email doesn't contain is dropped, never used to match or create.
+    const extraWarnings: string[] = [];
+    if (classification.jobRef && !jobRefAppearsIn(classification.jobRef, email.subject, email.bodyText)) {
+      extraWarnings.push(`Ignored job ID "${classification.jobRef}": it isn't in the email`);
+      classification = { ...classification, jobRef: null };
+    }
     if (!quoteVerified) {
       await markFailed(email.id, attempts, "Evidence quote not found in the email", classification);
       summary.unverified++;
@@ -75,11 +81,11 @@ export async function analyzePendingEmails(userId: string, limit: number): Promi
 
     const applications = await db.jobApplication.findMany({
       where: { userId },
-      select: { id: true, company: true, companyDomain: true, roleTitle: true, status: true },
+      select: { id: true, company: true, companyDomain: true, roleTitle: true, jobRef: true, status: true },
     });
     const match = matchApplication(classification, senderDomain(email.fromAddress), applications);
     const wordingOk = wordingSupportsCategory(classification.category, `${email.subject}\n${email.bodyText ?? ""}`);
-    const outcome = await proposeFromEmail({ userId, email, classification, match, wordingSupportsCategory: wordingOk });
+    const outcome = await proposeFromEmail({ userId, email, classification, match, wordingSupportsCategory: wordingOk, extraWarnings });
 
     const matchedId = match.kind === "matched" ? match.application.id : null;
     await db.emailMessage.update({
@@ -92,7 +98,13 @@ export async function analyzePendingEmails(userId: string, limit: number): Promi
           ...classification,
           quoteVerified,
           wordingSupportsCategory: wordingOk,
-          match: match.kind === "matched" ? { applicationId: matchedId, strength: match.strength } : null,
+          match:
+            match.kind === "matched"
+              ? { applicationId: matchedId, strength: match.strength }
+              : match.kind === "ambiguous"
+                ? { ambiguous: match.candidates.map((a) => a.id) }
+                : null,
+          ...(extraWarnings.length ? { warnings: extraWarnings } : {}),
           proposalId: outcome.proposalId,
           ...(outcome.proposalId === null ? { noProposalReason: outcome.reason } : {}),
           attempts,

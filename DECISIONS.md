@@ -130,6 +130,8 @@ I used Claude Code (Claude Opus) as a pair programmer for planning, scaffolding 
 | When | What the AI said or did | How I caught it | Fix |
 |---|---|---|---|
 | Phase 0 plan | Said the partial unique index couldn't be expressed in the Prisma schema and planned to add it as raw SQL in a migration | While building Phase 1, tested Prisma 7.10's `partialIndexes` preview feature in a scratch project; it works | Index declared in the schema. Raw SQL would have looked like drift, and a later migration would have dropped it. |
+| Phase 0 plan | Wrote that Supabase RLS "does not apply" because Prisma connects as the owner role. That ignored Supabase's auto-generated REST API: with RLS off, the `anon` role could read **and insert** into every table, including the one that will hold Gmail tokens | Before Phase 3, checked `has_table_privilege('anon', …)` on the live database | Migration enables RLS on every table, revokes the `anon`/`authenticated` grants and the default grants for future tables. Verified with `SET ROLE anon`: permission denied. |
+| Phase 0 plan | Stored "who is admin" twice: a `role` column and the `ADMIN_TELEGRAM_USER_ID` env var. After the first `/start` they already disagreed (`MEMBER` in the DB, admin in env). | Explaining the tables to the user | Dropped the column; the env var is the single source |
 | Phase 0 plan | Put `CREATE ROLE mcp_readonly ... PASSWORD '...'` in the list of migration SQL | Noticed while writing the migration that it would commit a database password to git | The role is created by hand in the Supabase SQL editor in Phase 7 |
 
 ## 11. Evals

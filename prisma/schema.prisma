@@ -10,11 +10,6 @@ datasource db {
 
 // ---------- Enums ----------
 
-enum UserRole {
-  ADMIN // receives budget alerts, can see global usage
-  MEMBER
-}
-
 enum ApplicationStatus {
   APPLIED
   ASSESSMENT // online assessment / coding test (HackerRank, Codility...)
@@ -105,7 +100,6 @@ model User {
   telegramChatId       BigInt
   telegramUsername     String?
   displayName          String?
-  role                 UserRole  @default(MEMBER)
   gmailAddress         String?   @unique
   gmailRefreshTokenEnc String? // AES-256-GCM ciphertext; never logged or returned
   gmailConnectedAt     DateTime?

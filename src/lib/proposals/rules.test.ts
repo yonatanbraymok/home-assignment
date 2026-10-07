@@ -39,6 +39,7 @@ const card: CardData = {
   confidence: "HIGH",
   warnings: ["Unusual change"],
   expiresAt: new Date("2026-10-14T10:00:00Z"),
+  heldForReview: false,
   failureReason: null,
   email: { fromAddress: "jobs@att.com", fromName: "AT&T", subject: "Update", receivedAt: new Date("2026-10-07T10:00:00Z"), gmailMessageId: "18f" },
   gmailAddress: "dana@gmail.com",
@@ -77,4 +78,20 @@ test("a which-application card offers each candidate, 'new' and 'ignore' instead
   assert.match(text, /The email says: Rejected/);
   const data = keyboard.inline_keyboard.flat().flatMap((b) => ("callback_data" in b ? [b.callback_data] : []));
   assert.deepEqual(data, ["p:c:cl1:0", "p:c:cl1:1", "p:c:cl1:n", "p:r:cl1"]);
+});
+
+test("a review card says how many are left and offers Later; a queued card has no decision buttons", () => {
+  const review = renderCard({ ...card, heldForReview: true, reviewRemaining: 4 });
+  assert.match(review.text, /Past emails:<\/b> 4 more after this one/);
+  const data = review.keyboard.inline_keyboard.flat().flatMap((b) => ("callback_data" in b ? [b.callback_data] : []));
+  assert.deepEqual(data, ["p:a:cl1", "p:r:cl1", "p:l:cl1"]);
+  assert.match(renderCard({ ...card, heldForReview: true, reviewRemaining: 0 }).text, /this is the last one/);
+
+  const queued = renderCard({ ...card, heldForReview: true, expiresAt: null });
+  assert.match(queued.text, /Waiting in your review queue/);
+  assert.equal(queued.keyboard.inline_keyboard.flat().length, 1); // only "Open email"
+
+  // Live cards (not from past emails) never get Later.
+  const live = renderCard(card).keyboard.inline_keyboard.flat().map((b) => b.text);
+  assert.ok(!live.includes("⏭ Later"));
 });

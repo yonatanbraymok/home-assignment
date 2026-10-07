@@ -3,9 +3,13 @@ import type { AnalysisSummary } from "@/lib/agent/analyze";
 import type { RevokeResult } from "@/lib/gmail/oauth";
 import type { SyncSummary } from "@/lib/gmail/sync";
 import type { Decision } from "@/lib/proposals/decide";
+import type { ReviewSummary } from "@/lib/proposals/past-emails";
+import type { DeferResult } from "@/lib/proposals/review";
 import { CLOSED_STATUSES, OPEN_STATUSES, STATUS_DESCRIPTION } from "@/lib/proposals/rules";
 import type { ApplicationStatus } from "@/generated/prisma/enums";
 import { COMMANDS } from "./commands";
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export function welcomeText(firstName: string, isNew: boolean, gmailAddress: string | null) {
   return [
@@ -16,6 +20,7 @@ export function welcomeText(firstName: string, isNew: boolean, gmailAddress: str
     "• I spot confirmations, online assessments, interviews, rejections and offers",
     "• For each one I explain why, quoting the exact sentence from the email",
     "• I propose the change here with Approve / Reject buttons. Nothing changes until you tap Approve.",
+    "• After you connect, I read your past emails first, then show you what I found one card at a time.",
     "",
     "You can /disconnect Gmail or /delete_my_data at any time.",
     "",
@@ -26,7 +31,9 @@ export function welcomeText(firstName: string, isNew: boolean, gmailAddress: str
 export function helpText() {
   return [
     "How approvals work",
-    "Every change I suggest comes with the email it's based on, the sentence that justifies it and how confident I am. Only you can approve changes to your own applications, and an unanswered proposal expires after 7 days.",
+    "Every change I suggest comes with the email it's based on, the sentence that justifies it and how confident I am. Only you can approve changes to your own applications, and a card expires 7 days after I show it.",
+    "",
+    "Your past emails (from before you connected Gmail) come as one review, one card at a time. ⏭ Later moves a card to the end; /pending continues where you stopped.",
     "",
     "Commands",
     ...COMMANDS.map((c) => `/${c.command} – ${c.description}`),
@@ -56,9 +63,14 @@ export function syncText({ fetched, candidates, skipped, remaining }: SyncSummar
 export function analysisText(s: AnalysisSummary, stillQueued: number): string {
   if (s.skippedNotConfigured) return "Email analysis isn't configured yet, so nothing was analysed.";
   if (s.analyzed === 0 && s.deferred === 0) return "";
-  const lines = [
-    `Analysed ${s.analyzed}: ${s.proposals} proposal${s.proposals === 1 ? "" : "s"} sent above, ${s.noChange} needed no change, ${s.notJobRelated} not job-related.`,
+  const outcomes = [
+    ...(s.proposals || !s.held ? [`${plural(s.proposals, "proposal")} sent above`] : []),
+    ...(s.held ? [`${s.held} kept for your review`] : []),
+    `${s.noChange} needed no change`,
+    `${s.notJobRelated} not job-related`,
   ];
+  const lines = [`Analysed ${s.analyzed}: ${outcomes.join(", ")}.`];
+  if (s.held) lines.push("Once I've read all your past emails, I'll show you what I found one card at a time.");
   if (s.unverified) lines.push(`${s.unverified} skipped: I couldn't find my evidence quote in the email, so I won't propose anything from it (I'll retry).`);
   if (s.failed) lines.push(`${s.failed} couldn't be analysed right now (I'll retry).`);
   if (s.deferred) lines.push(`The monthly AI budget is used up: ${s.deferred} emails are waiting until it resets.`);
@@ -76,6 +88,38 @@ export const DECISION_TOAST: Record<Decision["kind"], string> = {
   "not-yours": "Only the owner of this application can decide this.",
   "not-found": "This proposal no longer exists.",
   "needs-choice": "Tap the application this email is about.",
+};
+
+const STATUS_NOUN: Record<ApplicationStatus, string> = {
+  APPLIED: "application confirmation",
+  ASSESSMENT: "online assessment",
+  INTERVIEW: "interview invitation",
+  OFFER: "offer",
+  REJECTED: "rejection",
+  WITHDRAWN: "withdrawal",
+};
+const SUMMARY_ORDER: ApplicationStatus[] = ["OFFER", "INTERVIEW", "ASSESSMENT", "REJECTED", "APPLIED", "WITHDRAWN"];
+
+/** Sent once all past emails are read, instead of one card per email. */
+export function reviewReadyText(s: ReviewSummary): string {
+  return [
+    `I've finished reading your past emails. ${plural(s.total, "update")} ${s.total === 1 ? "is" : "are"} waiting for your review, from ${s.companies} ${s.companies === 1 ? "company" : "companies"}:`,
+    ...SUMMARY_ORDER.filter((k) => s.byStatus[k]).map((k) => `• ${plural(s.byStatus[k]!, STATUS_NOUN[k])}`),
+    "",
+    "Nothing changes until you approve each one. I'll show them one at a time, grouped by company. ⏭ Later moves a card to the end, and /pending continues where you stopped.",
+  ].join("\n");
+}
+
+export const REVIEW_DONE_TEXT = "That's everything from your past emails. From now on, I'll send a card when a new job email arrives.";
+
+export const STILL_READING_TEXT = "I'm still reading your past emails. When I'm done, I'll show you what I found one card at a time.";
+
+export const LATER_TOAST: Record<DeferResult, string> = {
+  deferred: "Moved to the end of your review.",
+  last: "This is the last one left to review.",
+  "not-open": "This card isn't waiting for a decision any more.",
+  "not-yours": "Only the owner of this application can decide this.",
+  "not-found": "This proposal no longer exists.",
 };
 
 export type StatsForText = {
@@ -108,8 +152,6 @@ export function statusText(s: StatsForText): string {
       : "Gmail is disconnected, so nothing new is being read. Send /connect to resume. You can still ask me about these applications.",
   ].join("\n");
 }
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 const REVOKE_NOTE: Record<RevokeResult | "not-connected", string> = {
   revoked: "Google access is revoked.",

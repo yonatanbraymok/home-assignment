@@ -1,4 +1,4 @@
-import { Bot, GrammyError, InlineKeyboard } from "grammy";
+import { Bot, GrammyError, InlineKeyboard, type Context } from "grammy";
 import { CANCEL_DATA, confirmationData, type AccountAction } from "@/lib/account/confirm";
 import { accountSummary, authorizeConfirmation, deleteAccount, disconnectGmail } from "@/lib/account/manage";
 import { analyzePendingEmails } from "@/lib/agent/analyze";
@@ -9,9 +9,13 @@ import { appUrl, requireEnv } from "@/lib/env";
 import { GmailAccessRevoked, syncMailbox } from "@/lib/gmail/sync";
 import { quietly, refreshCard, renderCardById, sendCard } from "@/lib/proposals/cards-io";
 import { approveProposal, rejectProposal } from "@/lib/proposals/decide";
+import { START_REVIEW_DATA } from "@/lib/proposals/past-emails";
+import { continueReview, deferReviewCard, finishBackfill, showNextReviewCard } from "@/lib/proposals/review";
 import { READ_TOOLS } from "@/lib/tools/read";
 import {
   DECISION_TOAST,
+  LATER_TOAST,
+  STILL_READING_TEXT,
   NOTHING_STORED_TEXT,
   NOT_CONNECTED_FOR_DISCONNECT_TEXT,
   NOT_CONNECTED_TEXT,
@@ -51,6 +55,14 @@ function confirmKeyboard(action: AccountAction, userId: string) {
     .text("Cancel", CANCEL_DATA);
 }
 
+// Telegram accepts an answer to a tap only for about 15 seconds. A tap that waited longer (behind
+// a long /sync, or while the bot restarted) has still been handled, so carry on and redraw the card.
+function answer(ctx: Context, other?: Parameters<Context["answerCallbackQuery"]>[0]) {
+  return ctx.answerCallbackQuery(other).catch((err) => {
+    if (!(err instanceof GrammyError && /query is too old|query ID is invalid/.test(err.description))) throw err;
+  });
+}
+
 // Editing a message to the same text is a no-op for us, not an error.
 function ignoreNotModified(err: unknown) {
   if (!(err instanceof GrammyError && err.description.includes("message is not modified"))) throw err;
@@ -72,7 +84,7 @@ function registerHandlers(bot: Bot) {
     const choice = action === "c" && choiceRaw ? (choiceRaw === "n" ? "new" : Number(choiceRaw)) : undefined;
     const decision =
       action === "r" ? await rejectProposal(proposalId, telegramUserId) : await approveProposal(proposalId, telegramUserId, choice);
-    await ctx.answerCallbackQuery({ text: DECISION_TOAST[decision.kind], show_alert: decision.kind === "not-yours" });
+    await answer(ctx, { text: DECISION_TOAST[decision.kind], show_alert: decision.kind === "not-yours" });
     if (decision.kind === "not-yours" || decision.kind === "not-found") return;
 
     // Redraw the message that was tapped (it may be a /pending re-send), then the original card.
@@ -86,24 +98,53 @@ function registerHandlers(bot: Bot) {
     if (view.messageId && view.messageId !== ctx.callbackQuery.message?.message_id) {
       await quietly("refresh original card", refreshCard(proposalId));
     }
+    // A fresh decision on a review card brings the next one (a double tap mustn't).
+    if (decision.kind !== "needs-choice" && decision.kind !== "already") await quietly("next review card", continueReview(proposalId));
+  });
+
+  // "Later" on a review card: back to the end of the queue, then the next card.
+  bot.callbackQuery(/^p:l:([a-z0-9]+)$/, async (ctx) => {
+    const proposalId = ctx.match[1];
+    const { result, userId } = await deferReviewCard(proposalId, BigInt(ctx.from.id));
+    await answer(ctx, { text: LATER_TOAST[result], show_alert: result === "not-yours" });
+    if (result === "not-yours" || result === "not-found") return;
+    const view = await renderCardById(proposalId);
+    if (view) {
+      await ctx
+        .editMessageText(view.text, { parse_mode: "HTML", reply_markup: view.keyboard, link_preview_options: { is_disabled: true } })
+        .catch(ignoreNotModified);
+    }
+    if (userId) await quietly("next review card", showNextReviewCard(userId));
+  });
+
+  // The button on the "I've finished reading your past emails" summary.
+  bot.callbackQuery(START_REVIEW_DATA, async (ctx) => {
+    const user = await findUser(ctx.from.id);
+    if (!user) return answer(ctx, { text: NOT_REGISTERED_TEXT });
+    const next = await showNextReviewCard(user.id);
+    await answer(ctx, next.kind === "done" ? { text: "Nothing left to review." } : next.kind === "reading" ? { text: STILL_READING_TEXT } : undefined);
+    // One tap is enough; /pending continues the review later.
+    await ctx.editMessageReplyMarkup().catch(ignoreNotModified);
+    // Already started: bring the current card back to the bottom of the chat.
+    if (next.kind === "open") await sendCard(next.proposalId);
   });
 
   // Confirmation buttons for /disconnect and /delete_my_data. Editing the message without a
   // keyboard removes the buttons, so a confirmation can be used once.
   bot.callbackQuery(/^acct:/, async (ctx) => {
     if (ctx.callbackQuery.data === CANCEL_DATA) {
-      await ctx.answerCallbackQuery({ text: "Cancelled." });
+      await answer(ctx, { text: "Cancelled." });
       return ctx.editMessageText("Cancelled. Nothing changed.").catch(ignoreNotModified);
     }
     const auth = await authorizeConfirmation(ctx.callbackQuery.data, BigInt(ctx.from.id));
-    if (auth === "invalid") return ctx.answerCallbackQuery();
-    if (auth === "not-owner") return ctx.answerCallbackQuery({ text: "Only the account owner can confirm this.", show_alert: true });
+    if (auth === "invalid") return answer(ctx);
+    if (auth === "not-owner") return answer(ctx, { text: "Only the account owner can confirm this.", show_alert: true });
     if (auth === "expired" || auth === "not-found") {
       const text = auth === "expired" ? "This confirmation expired. Nothing changed; send the command again." : "Already deleted.";
-      await ctx.answerCallbackQuery({ text });
+      await answer(ctx, { text });
       return ctx.editMessageText(text).catch(ignoreNotModified);
     }
-    await ctx.answerCallbackQuery();
+    await answer(ctx);
     if (auth.action === "disconnect") {
       const result = await disconnectGmail(auth.userId, `tg:${ctx.from.id}`);
       return ctx.editMessageText(result.status === "disconnected" ? disconnectDoneText(result.revoke) : "Gmail was already disconnected.").catch(ignoreNotModified);
@@ -163,19 +204,24 @@ function registerHandlers(bot: Bot) {
     const analysis = await analyzePendingEmails(user.id, ANALYZE_PER_SYNC);
     const stillQueued = await db.emailMessage.count({ where: { userId: user.id, state: "NEW" } });
     await ctx.reply([fetched, analysisText(analysis, stillQueued)].filter(Boolean).join("\n\n"));
+    await quietly("review summary", finishBackfill(user.id));
   });
 
   pm.command("pending", async (ctx) => {
     const user = await findUser(ctx.from.id);
     if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
-    const pending = await db.statusProposal.findMany({
-      where: { userId: user.id, state: { in: ["PENDING", "FAILED"] } },
+    // Cards already shown and still open. Cards in the review queue come one at a time below.
+    const shown = await db.statusProposal.findMany({
+      where: { userId: user.id, OR: [{ state: "FAILED" }, { state: "PENDING", expiresAt: { not: null } }] },
       orderBy: { createdAt: "asc" },
       take: MAX_PENDING_RESENT,
       select: { id: true },
     });
-    if (!pending.length) return ctx.reply("Nothing is waiting for your decision.");
-    for (const p of pending) await sendCard(p.id);
+    for (const p of shown) await sendCard(p.id);
+    const review = await showNextReviewCard(user.id);
+    if (review.kind === "open" && !shown.some((p) => p.id === review.proposalId)) await sendCard(review.proposalId);
+    if (review.kind === "reading") return ctx.reply(STILL_READING_TEXT);
+    if (!shown.length && review.kind === "done") return ctx.reply("Nothing is waiting for your decision.");
   });
 
   pm.command("disconnect", async (ctx) => {

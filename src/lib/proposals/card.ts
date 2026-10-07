@@ -25,7 +25,9 @@ export type CardData = {
   evidenceQuote: string;
   confidence: Confidence;
   warnings: string[];
-  expiresAt: Date;
+  expiresAt: Date | null; // null while waiting in the review queue (not shown yet)
+  heldForReview: boolean;
+  reviewRemaining?: number | null; // on the open review card: cards still waiting after it
   failureReason: string | null;
   application?: { status: ApplicationStatus; roleTitle: string; jobRef: string | null } | null; // current state
   email: { fromAddress: string; fromName: string | null; subject: string; receivedAt: Date; gmailMessageId: string };
@@ -90,16 +92,18 @@ export function renderCard(card: CardData): { text: string; keyboard: InlineKeyb
   ];
 
   const keyboard = new InlineKeyboard().url("🔗 Open email", gmailMessageUrl(card.gmailAddress, card.email.gmailMessageId)).row();
-  const open = card.state === "PENDING" || card.state === "FAILED";
+  const queued = card.state === "PENDING" && !card.expiresAt;
+  const open = !queued && (card.state === "PENDING" || card.state === "FAILED");
   if (open && choosing) {
     card.candidates!.forEach((c, i) => keyboard.text(truncate(c.label), `p:c:${card.id}:${i}`).row());
     keyboard.text("➕ It's a new application", `p:c:${card.id}:n`).row();
     keyboard.text("❌ Ignore", `p:r:${card.id}`);
-  } else if (card.state === "PENDING") {
+  } else if (open && card.state === "PENDING") {
     keyboard.text("✅ Approve", `p:a:${card.id}`).text("❌ Reject", `p:r:${card.id}`);
   } else if (card.state === "FAILED") {
     keyboard.text("🔁 Retry", `p:x:${card.id}`).text("❌ Reject", `p:r:${card.id}`);
   }
+  if (open && card.state === "PENDING" && card.heldForReview) keyboard.row().text("⏭ Later", `p:l:${card.id}`);
   return { text: lines.join("\n"), keyboard };
 }
 
@@ -111,10 +115,19 @@ function statusLine(card: CardData, choosing: boolean): string {
   const e = escapeHtml;
   const name = `${e(card.company)} · ${e(card.application?.roleTitle ?? card.roleTitle)}`;
   switch (card.state) {
-    case "PENDING":
-      return choosing
-        ? `<i>Tap the application this email is about to mark it ${STATUS_LABEL[card.toStatus]}. Nothing changes until you tap. Expires ${formatDate(card.expiresAt)}.</i>`
-        : `<i>Nothing changes until you tap Approve. Expires ${formatDate(card.expiresAt)}.</i>`;
+    case "PENDING": {
+      if (!card.expiresAt) return "⏭ <i>Waiting in your review queue. Nothing changes until you decide.</i>";
+      const review =
+        card.reviewRemaining == null
+          ? ""
+          : `🗂 <b>Past emails:</b> ${card.reviewRemaining ? `${card.reviewRemaining} more after this one` : "this is the last one"}.\n`;
+      return (
+        review +
+        (choosing
+          ? `<i>Tap the application this email is about to mark it ${STATUS_LABEL[card.toStatus]}. Nothing changes until you tap. Expires ${formatDate(card.expiresAt)}.</i>`
+          : `<i>Nothing changes until you tap Approve. Expires ${formatDate(card.expiresAt)}.</i>`)
+      );
+    }
     case "EXECUTED":
       return card.kind === "CREATE_APPLICATION"
         ? `✅ <b>Approved.</b> Now tracking ${name} as ${STATUS_LABEL[card.toStatus]}.`

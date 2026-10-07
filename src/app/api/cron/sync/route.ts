@@ -2,7 +2,9 @@ import { analyzePendingEmails, type AnalysisSummary } from "@/lib/agent/analyze"
 import { safeEqual } from "@/lib/crypto";
 import { requireEnv } from "@/lib/env";
 import { syncAllMailboxes } from "@/lib/gmail/sync";
+import { quietly } from "@/lib/proposals/cards-io";
 import { expireOverdueProposals } from "@/lib/proposals/expire";
+import { finishBackfill } from "@/lib/proposals/review";
 
 export const maxDuration = 60;
 
@@ -25,6 +27,7 @@ export async function POST(req: Request) {
     if (Date.now() - startedAt > TOTAL_BUDGET_MS) break;
     try {
       analyzed.push({ userId, ...(await analyzePendingEmails(userId, ANALYZE_PER_USER)) });
+      await quietly("review summary", finishBackfill(userId));
     } catch (err) {
       // Details go to the server log only; the response must not carry internals.
       console.error(`analysis failed for user ${userId}:`, err instanceof Error ? err.message : err);

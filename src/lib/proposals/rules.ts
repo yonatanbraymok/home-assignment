@@ -1,6 +1,10 @@
 import type { ApplicationStatus, Confidence, EmailCategory } from "@/generated/prisma/enums";
 
+// Counted from when the card is shown (a card waiting in the review queue doesn't expire).
 export const PROPOSAL_TTL_MS = 7 * 86_400_000;
+
+/** Review cards not shown yet: held from past emails, or moved back with "Later". */
+export const reviewQueueWhere = (userId: string) => ({ userId, heldForReview: true, state: "PENDING" as const, expiresAt: null });
 
 /** Which status an email category proposes; null means "no status change" (timeline only). */
 export const CATEGORY_TO_STATUS: Record<EmailCategory, ApplicationStatus | null> = {

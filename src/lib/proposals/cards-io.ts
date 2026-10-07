@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { telegramApi } from "@/lib/telegram/notify";
 import { renderCard, type CardData } from "./card";
 import type { Candidate } from "./create";
+import { reviewQueueWhere } from "./rules";
 
 // Sending and re-rendering proposal cards. The database is the source of truth; a card is only
 // a view of it, so every edit re-reads the proposal and renders its current state.
@@ -17,7 +18,10 @@ async function loadCard(proposalId: string) {
     },
   });
   if (!p) return null;
-  const card: CardData = { ...p, candidates: (p.candidates as Candidate[] | null) ?? null, gmailAddress: p.user.gmailAddress };
+  // On the open review card: how many past-email cards are still waiting after it.
+  const reviewRemaining =
+    p.heldForReview && p.state === "PENDING" && p.expiresAt ? await db.statusProposal.count({ where: reviewQueueWhere(p.userId) }) : null;
+  const card: CardData = { ...p, candidates: (p.candidates as Candidate[] | null) ?? null, gmailAddress: p.user.gmailAddress, reviewRemaining };
   return { card, userChatId: p.user.telegramChatId, chatId: p.telegramChatId, messageId: p.telegramMessageId };
 }
 
@@ -36,6 +40,8 @@ export async function sendCard(proposalId: string): Promise<void> {
     parse_mode: "HTML",
     reply_markup: keyboard,
     link_preview_options: { is_disabled: true },
+    // Review cards come right after the owner's own tap, so they don't need to buzz the phone.
+    disable_notification: loaded.card.heldForReview,
   });
   await db.statusProposal.update({
     where: { id: proposalId },
@@ -62,7 +68,7 @@ export async function refreshCard(proposalId: string): Promise<void> {
 }
 
 /** Best-effort wrapper for card I/O after the database is already correct. */
-export async function quietly(what: string, task: Promise<void>): Promise<void> {
+export async function quietly(what: string, task: Promise<unknown>): Promise<void> {
   try {
     await task;
   } catch (err) {

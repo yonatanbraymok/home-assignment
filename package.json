@@ -16,7 +16,8 @@
     "eval:approval": "tsx --env-file=.env.local evals/approval-safety.ts",
     "eval:classifier": "tsx --env-file=.env.local evals/classifier.ts",
     "eval:chat": "tsx --env-file=.env.local evals/chat.ts",
-    "eval:account": "tsx --env-file=.env.local evals/account.ts"
+    "eval:account": "tsx --env-file=.env.local evals/account.ts",
+    "eval:review": "tsx --env-file=.env.local evals/review.ts"
   },
   "dependencies": {
     "@google/genai": "^2.27.0",

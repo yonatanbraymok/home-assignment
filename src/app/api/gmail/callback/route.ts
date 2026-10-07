@@ -55,6 +55,7 @@ export async function GET(req: Request) {
       gmailRefreshTokenEnc: encrypt(tokens.refresh_token),
       gmailConnectedAt: new Date(),
       gmailSyncError: null,
+      backfillDoneAt: null, // emails from before now are read first and reviewed one at a time
       // A different mailbox starts with a fresh 60-day backfill.
       ...(switchedAccount ? { gmailLastSyncAt: null } : {}),
     },
@@ -62,7 +63,7 @@ export async function GET(req: Request) {
 
   await sendToUser(
     user.telegramChatId,
-    `Gmail connected: ${address}\n\nI only read; I can't send, delete or change anything. Send /sync to fetch your job emails from the last 60 days.`,
+    `Gmail connected: ${address}\n\nI only read; I can't send, delete or change anything. Send /sync to fetch your job emails from the last 60 days. I'll read them all first, then show you what I found one card at a time.`,
   ).catch((e) => console.error("connected notice failed:", e instanceof Error ? e.message : e));
 
   return result("connected");

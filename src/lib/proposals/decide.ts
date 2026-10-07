@@ -46,7 +46,7 @@ export async function approveProposal(proposalId: string, telegramUserId: bigint
     await logDenied(p.userId, proposalId, telegramUserId);
     return { kind: "not-yours" };
   }
-  if (DECIDABLE.includes(p.state) && p.expiresAt <= new Date()) return expire(proposalId);
+  if (DECIDABLE.includes(p.state) && p.expiresAt && p.expiresAt <= new Date()) return expire(proposalId);
 
   // Resolve what this approval applies to.
   const candidates = (p.candidates as Candidate[] | null) ?? null;
@@ -72,7 +72,8 @@ export async function approveProposal(proposalId: string, telegramUserId: bigint
       const now = new Date();
       // Claim: only one tap can move it out of PENDING/FAILED (double taps, two devices).
       const claimed = await tx.statusProposal.updateMany({
-        where: { id: proposalId, state: { in: DECIDABLE }, expiresAt: { gt: now } },
+        // No expiry yet: a review card back in the queue, tapped on an older copy of it.
+        where: { id: proposalId, state: { in: DECIDABLE }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
         data: {
           state: "EXECUTED",
           decidedByTelegramUserId: telegramUserId,

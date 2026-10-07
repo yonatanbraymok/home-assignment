@@ -4,6 +4,7 @@ import { senderDomain } from "@/lib/gmail/parse";
 import { BudgetExceeded } from "@/lib/llm/budget";
 import { llmConfigured } from "@/lib/llm/gemini";
 import { proposeFromEmail } from "@/lib/proposals/create";
+import { isPastEmail } from "@/lib/proposals/past-emails";
 import { classifyEmail, type Classification } from "./classify";
 import { matchApplication } from "./match";
 import { wordingSupportsCategory } from "./signals";
@@ -16,7 +17,8 @@ const CLAIMABLE = ["NEW", "FAILED", "DEFERRED_BUDGET"] as const;
 
 export type AnalysisSummary = {
   analyzed: number;
-  proposals: number;
+  proposals: number; // cards sent now
+  held: number; // proposals from past emails, kept for the one-at-a-time review
   noChange: number; // job-related, but nothing to propose (already in that status, no company, ...)
   notJobRelated: number;
   unverified: number; // the model's quote wasn't in the email: no proposal
@@ -30,8 +32,9 @@ export type AnalysisSummary = {
  * of events) and turns verified results into proposals.
  */
 export async function analyzePendingEmails(userId: string, limit: number): Promise<AnalysisSummary> {
-  const summary: AnalysisSummary = { analyzed: 0, proposals: 0, noChange: 0, notJobRelated: 0, unverified: 0, failed: 0, deferred: 0 };
+  const summary: AnalysisSummary = { analyzed: 0, proposals: 0, held: 0, noChange: 0, notJobRelated: 0, unverified: 0, failed: 0, deferred: 0 };
   if (!llmConfigured()) return { ...summary, skippedNotConfigured: true };
+  const user = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { gmailConnectedAt: true, backfillDoneAt: true } });
 
   const staleClaim = () => ({ state: "ANALYZING" as const, claimedAt: { lt: new Date(Date.now() - CLAIM_TTL_MS) } });
   const queued = await db.emailMessage.findMany({
@@ -98,7 +101,15 @@ export async function analyzePendingEmails(userId: string, limit: number): Promi
     });
     const match = matchApplication(classification, senderDomain(email.fromAddress), applications);
     const wordingOk = wordingSupportsCategory(classification.category, `${email.subject}\n${email.bodyText ?? ""}`);
-    const outcome = await proposeFromEmail({ userId, email, classification, match, wordingSupportsCategory: wordingOk, extraWarnings });
+    const outcome = await proposeFromEmail({
+      userId,
+      email,
+      classification,
+      match,
+      wordingSupportsCategory: wordingOk,
+      extraWarnings,
+      holdForReview: isPastEmail(user, email.receivedAt),
+    });
 
     const matchedId = match.kind === "matched" ? match.application.id : null;
     await db.emailMessage.update({
@@ -126,8 +137,9 @@ export async function analyzePendingEmails(userId: string, limit: number): Promi
     });
     if (matchedId) await db.jobApplication.update({ where: { id: matchedId }, data: { lastEmailAt: email.receivedAt } });
     await logClassified(userId, email.id, classification, outcome.proposalId);
-    if (outcome.proposalId) summary.proposals++;
-    else summary.noChange++;
+    if (outcome.proposalId === null) summary.noChange++;
+    else if (outcome.held) summary.held++;
+    else summary.proposals++;
   }
   return summary;
 }

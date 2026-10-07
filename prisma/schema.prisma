@@ -109,6 +109,9 @@ model User {
   gmailConnectedAt     DateTime?
   gmailLastSyncAt      DateTime?
   gmailSyncError       String?
+  // When every email from before the current connection was read and the review summary sent.
+  // Until then, proposals from those emails are held for the one-at-a-time review.
+  backfillDoneAt       DateTime?
   mcpTokenHash         String?   @unique // sha256 of the bearer token; plaintext shown once
   mcpTokenCreatedAt    DateTime?
   createdAt            DateTime  @default(now())
@@ -203,7 +206,11 @@ model StatusProposal {
   decidedAt               DateTime?
   executedAt              DateTime?
   failureReason           String?
-  expiresAt               DateTime
+  // Set when the card is first shown. A card waiting in the review queue has none and doesn't expire.
+  expiresAt               DateTime?
+  // From an email received before Gmail was connected: shown one at a time in the review, not pushed.
+  heldForReview           Boolean            @default(false)
+  deferredAt              DateTime? // owner tapped "Later": back of the review queue
   createdAt               DateTime           @default(now())
   updatedAt               DateTime           @updatedAt
 

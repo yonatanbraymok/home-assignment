@@ -4,9 +4,10 @@ import type { Classification } from "@/lib/agent/classify";
 import { dedupeKey, type MatchResult, type MatchableApplication } from "@/lib/agent/match";
 import { quietly, refreshCard, sendCard } from "./cards-io";
 import { planProposal } from "./plan";
+import { showNextReviewCard } from "./review";
 import { CATEGORY_TO_STATUS, PROPOSAL_TTL_MS, STATUS_LABEL, capConfidence } from "./rules";
 
-export type ProposeOutcome = { proposalId: string } | { proposalId: null; reason: string };
+export type ProposeOutcome = { proposalId: string; held: boolean } | { proposalId: null; reason: string };
 
 /** One choice on a "which application is this?" card. */
 export type Candidate = { applicationId: string; label: string; status: ApplicationStatus };
@@ -14,7 +15,8 @@ export type Candidate = { applicationId: string; label: string; status: Applicat
 const MAX_CANDIDATES = 5;
 
 /**
- * Turns a verified classification into a PENDING proposal and sends its card.
+ * Turns a verified classification into a PENDING proposal and sends its card, or holds the card
+ * for the review when the email is from before Gmail was connected (see review.ts).
  * Writes only proposals: the application itself changes only when the owner approves.
  */
 export async function proposeFromEmail(input: {
@@ -24,6 +26,7 @@ export async function proposeFromEmail(input: {
   match: MatchResult<MatchableApplication>;
   wordingSupportsCategory: boolean;
   extraWarnings?: string[];
+  holdForReview?: boolean;
 }): Promise<ProposeOutcome> {
   const { userId, email, classification: c, match } = input;
   const toStatus = CATEGORY_TO_STATUS[c.category];
@@ -50,7 +53,9 @@ export async function proposeFromEmail(input: {
     reasoning: c.reasoning,
     evidenceQuote: c.evidenceQuote,
     confidence: capConfidence(c.confidence, cap),
-    expiresAt: new Date(Date.now() + PROPOSAL_TTL_MS),
+    // A held card's 7 days start when the review shows it.
+    expiresAt: input.holdForReview ? null : new Date(Date.now() + PROPOSAL_TTL_MS),
+    heldForReview: input.holdForReview ?? false,
     warnings,
   };
 
@@ -114,7 +119,8 @@ type NewProposal = {
   evidenceQuote: string;
   confidence: Confidence;
   warnings: string[];
-  expiresAt: Date;
+  expiresAt: Date | null;
+  heldForReview: boolean;
 };
 
 /**
@@ -133,13 +139,21 @@ async function createReplacingOlder(
         state: "PENDING",
         ...("applicationId" in target ? { applicationId: target.applicationId } : { kind: "CREATE_APPLICATION" }),
       },
-      select: { id: true, company: true, roleTitle: true, jobRef: true, email: { select: { receivedAt: true } } },
+      select: {
+        id: true,
+        company: true,
+        roleTitle: true,
+        jobRef: true,
+        heldForReview: true,
+        expiresAt: true,
+        email: { select: { receivedAt: true } },
+      },
     });
     const sameTarget =
       "applicationId" in target ? pending : pending.filter((p) => dedupeKey(p.company, p.roleTitle, p.jobRef) === target.dedupeKey);
 
     if (sameTarget.some((p) => p.email.receivedAt > emailReceivedAt)) {
-      return { proposalId: null, reason: "a newer email already has a pending proposal", superseded: [] as string[] };
+      return { proposalId: null, reason: "a newer email already has a pending proposal", superseded: [] as string[], replacedReviewCard: false };
     }
     const superseded = sameTarget.map((p) => p.id);
     if (superseded.length) {
@@ -148,20 +162,23 @@ async function createReplacingOlder(
         data: superseded.map((id) => ({ userId: data.userId, actor: "AGENT" as const, action: "PROPOSAL_SUPERSEDED" as const, proposalId: id })),
       });
     }
-    return { proposalId: await insertProposal(tx, data), superseded };
+    // The review card on screen is being replaced: the review must move on without a tap.
+    const replacedReviewCard = sameTarget.some((p) => p.heldForReview && p.expiresAt);
+    return { proposalId: await insertProposal(tx, data), superseded, replacedReviewCard };
   });
 
   if (outcome.proposalId === null) return { proposalId: null, reason: outcome.reason };
   for (const id of outcome.superseded) await quietly("refresh superseded card", refreshCard(id));
-  await quietly("send proposal card", sendCard(outcome.proposalId));
-  return { proposalId: outcome.proposalId };
+  if (!data.heldForReview) await quietly("send proposal card", sendCard(outcome.proposalId));
+  if (outcome.replacedReviewCard) await quietly("next review card", showNextReviewCard(data.userId));
+  return { proposalId: outcome.proposalId, held: data.heldForReview };
 }
 
 /** For "which application is this?" proposals: no single target, so nothing to supersede. */
 async function createProposal(data: NewProposal): Promise<ProposeOutcome> {
   const proposalId = await db.$transaction((tx) => insertProposal(tx, data));
-  await quietly("send proposal card", sendCard(proposalId));
-  return { proposalId };
+  if (!data.heldForReview) await quietly("send proposal card", sendCard(proposalId));
+  return { proposalId, held: data.heldForReview };
 }
 
 type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
@@ -176,7 +193,14 @@ async function insertProposal(tx: Tx, data: NewProposal): Promise<string> {
       action: "PROPOSAL_CREATED",
       proposalId: created.id,
       applicationId: data.applicationId,
-      payload: { kind: data.kind, from: data.fromStatus, to: data.toStatus, confidence: data.confidence, ambiguous: Boolean(candidates) },
+      payload: {
+        kind: data.kind,
+        from: data.fromStatus,
+        to: data.toStatus,
+        confidence: data.confidence,
+        ambiguous: Boolean(candidates),
+        heldForReview: data.heldForReview,
+      },
     },
   });
   // If Telegram is down the proposal still exists; /pending re-sends it.

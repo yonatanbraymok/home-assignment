@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BriefOutputSchema, briefEmails, buildBriefPrompt, groundBrief, type BriefApplication, type BriefEmail } from "./brief-grounding";
+import { BriefOutputSchema, briefEmails, buildBriefPrompt, groundBrief, noBrief, planBrief, type BriefApplication, type BriefEmail } from "./brief-grounding";
 
 const app: BriefApplication = { id: "app1", company: "Wix", roleTitle: "Backend Student", jobRef: null, status: "INTERVIEW" };
 const email = (id: string, date: string, subject: string, body: string): BriefEmail => ({
@@ -39,21 +39,58 @@ test("facts survive only if their quote is in the email they cite; records and d
     },
     app,
     emails,
+    planBrief("INTERVIEW", []),
   );
+  assert.deepEqual([brief.briefType, brief.pendingApproval], ["interview", null]);
   assert.deepEqual(brief.context, { applicationId: "app1", company: "Wix", roleTitle: "Backend Student", jobId: null, currentStatus: "interviewing" });
   assert.equal(brief.actionRequired, null);
   assert.deepEqual(
     brief.timeline.map((t) => [t.date, t.eventSummary]),
     [["2026-08-12", "Applied"], ["2026-09-20", "Interview invitation"]],
   );
-  assert.equal(brief.interviewAgenda.duration?.value, "45 minutes");
-  assert.equal(brief.interviewAgenda.duration?.emailDate, "2026-09-20");
-  assert.deepEqual(brief.interviewAgenda.people.map((p) => p.value), ["Dana, backend team"]);
-  assert.equal(brief.interviewAgenda.location, null);
+  assert.equal(brief.agenda.duration?.value, "45 minutes");
+  assert.equal(brief.agenda.duration?.emailDate, "2026-09-20");
+  assert.deepEqual(brief.agenda.people.map((p) => p.value), ["Dana, backend team"]);
+  assert.equal(brief.agenda.location, null);
   assert.equal(brief.prepFromEmails.length, 5);
   // A tip naming the company is a claim about its process, not general knowledge.
   assert.deepEqual(brief.roleSpecificPrep, ["Revise REST API design", "Practise SQL joins", "Know HTTP caching"]);
   assert.equal(brief.meta.droppedClaims, 5);
   assert.equal(brief.meta.quotesVerified, true);
   assert.equal(BriefOutputSchema.safeParse(brief).success, true);
+});
+
+test("what to prepare for is decided in code: the status, or a card still waiting in Telegram", () => {
+  assert.deepEqual(planBrief("INTERVIEW", []), { briefType: "interview", reason: null, pendingApproval: null });
+  assert.deepEqual(planBrief("ASSESSMENT", []), { briefType: "assessment", reason: null, pendingApproval: null });
+  // The invite arrived but its card isn't approved yet: brief for the interview, and say so.
+  assert.deepEqual(planBrief("APPLIED", ["INTERVIEW"]), { briefType: "interview", reason: null, pendingApproval: "INTERVIEW" });
+  assert.deepEqual(planBrief("ASSESSMENT", ["INTERVIEW"]), { briefType: "interview", reason: null, pendingApproval: "INTERVIEW" });
+  assert.deepEqual(planBrief("APPLIED", ["ASSESSMENT"]), { briefType: "assessment", reason: null, pendingApproval: "ASSESSMENT" });
+  // A pending rejection isn't something to prepare for.
+  assert.deepEqual(planBrief("INTERVIEW", ["REJECTED"]).briefType, "interview");
+  for (const [status, reason] of [
+    ["APPLIED", /waiting for a reply/],
+    ["REJECTED", /rejected/],
+    ["WITHDRAWN", /withdrawn/],
+    ["OFFER", /offer stage/],
+  ] as const) {
+    const plan = planBrief(status, []);
+    assert.equal(plan.briefType, "none", status);
+    assert.match(plan.reason!, reason);
+  }
+});
+
+test("'nothing to prepare for' has the same shape, empty, and states the reason", () => {
+  const none = noBrief({ ...app, status: "REJECTED" }, planBrief("REJECTED", []), 2);
+  assert.equal(BriefOutputSchema.safeParse(none).success, true);
+  assert.deepEqual([none.briefType, none.timeline, none.roleSpecificPrep, none.agenda.people], ["none", [], [], []]);
+  assert.match(none.reason!, /rejected/);
+  const pending = groundBrief(
+    { actionRequired: [], agenda: [], timeline: [], prepFromEmails: [], roleSpecificPrep: [], notInEmails: [] },
+    app,
+    emails,
+    planBrief("APPLIED", ["INTERVIEW"]),
+  );
+  assert.match(pending.pendingApproval!.note, /hasn't approved the change in Telegram yet/);
 });

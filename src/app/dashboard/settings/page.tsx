@@ -81,7 +81,7 @@ async function Settings() {
         <CardHeader>
           <CardTitle>MCP access for other agents</CardTitle>
           <CardDescription>
-            Let your own AI assistant (Claude, Cursor, a calendar agent…) read your tracker and ask for interview briefs. It can&apos;t change
+            Let your own AI assistant (Claude, Cursor, a calendar agent…) read your tracker and ask for interview or assessment briefs. It can&apos;t change
             anything: approving stays in Telegram.
           </CardDescription>
           <CardAction>
@@ -92,8 +92,9 @@ async function Settings() {
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             <li>list_applications: your applications and their ids. No AI cost.</li>
             <li>
-              generate_interview_brief: a brief for one application, built from its emails, with every quote checked word for word. Uses your AI
-              allowance; asking again is free until a new email arrives.
+              generate_prep_brief: a brief for one application&apos;s next interview or assessment, built from its emails, with every quote
+              checked word for word. Uses your AI allowance; asking again is free until something changes, and it costs nothing when there&apos;s
+              nothing to prepare for.
             </li>
           </ul>
           {mcp.createdAt && (

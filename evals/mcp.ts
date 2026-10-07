@@ -1,5 +1,7 @@
 // Eval: the MCP server, end to end over HTTP with the official MCP client, the way another agent
-// connects. Checks the token (missing, wrong, revoked), that exactly two read-only tools exist,
+// connects. The brief prepares for the next interview or assessment, decided in code: here the
+// interview invite's card still waits in Telegram (status Applied), and a rejected application and
+// one still waiting for a reply get "nothing to prepare for" at no cost. Checks the token (missing, wrong, revoked), that exactly two read-only tools exist,
 // that list_applications and the brief only see the token owner's data, that the brief keeps only
 // quotes found in the emails and ignores instructions planted in one, that it's charged to the
 // owner's allowance, cached until a new email arrives and refused when the allowance is used up,
@@ -28,11 +30,13 @@ const BODIES = [
 
 async function seed(tg: bigint, name: string, company: string) {
   const user = await db.user.create({ data: { telegramUserId: tg, telegramChatId: tg, displayName: name } });
-  const app = await db.jobApplication.create({
-    data: { userId: user.id, company, roleTitle: "Backend Developer Student", dedupeKey: `${company.toLowerCase()}|backend`, status: "INTERVIEW", source: "EMAIL" },
-  });
-  return { user, app };
+  return { user, app: await application(user.id, company, "APPLIED") };
 }
+
+const application = (userId: string, company: string, status: "APPLIED" | "REJECTED") =>
+  db.jobApplication.create({
+    data: { userId, company, roleTitle: "Backend Developer Student", dedupeKey: `${company.toLowerCase()}|backend|${status}`, status, source: "EMAIL" },
+  });
 
 const connect = async (token: string) => {
   const client = new Client({ name: "eval", version: "1.0.0" });
@@ -45,13 +49,30 @@ async function main() {
   await cleanup();
   const a = await seed(A_TG, "MCP A", "Wix");
   const b = await seed(B_TG, "MCP B", "Monday");
+  const emailIds: string[] = [];
   for (const [i, body] of BODIES.entries()) {
-    await db.emailMessage.create({
+    const e = await db.emailMessage.create({
       data: {
         userId: a.user.id, applicationId: a.app.id, gmailMessageId: `eval-mcp-${i}`, gmailThreadId: "t", fromAddress: "jobs@wix.com", fromName: "Wix Careers",
         subject: ["Application received", "Your Wix assessment results", "Interview with Wix"][i], receivedAt: new Date(Date.now() - (30 - i * 10) * DAY),
         snippet: "", bodyText: body, state: "CLASSIFIED", category: (["APPLICATION_RECEIVED", "ASSESSMENT_INVITE", "INTERVIEW_INVITE"] as const)[i],
       },
+    });
+    emailIds.push(e.id);
+  }
+  // The interview invite's card hasn't been approved yet: the tracker still says Applied.
+  await db.statusProposal.create({
+    data: {
+      userId: a.user.id, emailId: emailIds[2], applicationId: a.app.id, kind: "UPDATE_STATUS", fromStatus: "APPLIED", toStatus: "INTERVIEW", company: "Wix",
+      roleTitle: "Backend Developer Student", reasoning: "r", evidenceQuote: "q", confidence: "HIGH", warnings: [], expiresAt: new Date(Date.now() + 5 * DAY),
+    },
+  });
+  // Two applications with nothing to prepare for.
+  const rejected = await application(a.user.id, "Monday", "REJECTED");
+  const waiting = await application(a.user.id, "Fiverr", "APPLIED");
+  for (const [i, app] of [rejected, waiting].entries()) {
+    await db.emailMessage.create({
+      data: { userId: a.user.id, applicationId: app.id, gmailMessageId: `eval-mcp-other-${i}`, gmailThreadId: "t", fromAddress: "jobs@example.com", subject: "Update", receivedAt: new Date(Date.now() - DAY), snippet: "", bodyText: "Thank you for your application.", state: "CLASSIFIED", category: "APPLICATION_RECEIVED" },
     });
   }
 
@@ -66,22 +87,22 @@ async function main() {
   // 2. Exactly two tools, both read-only.
   const client = await connect(token);
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["generate_interview_brief", "list_applications"]);
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["generate_prep_brief", "list_applications"]);
   assert.ok(tools.every((t) => t.annotations?.readOnlyHint === true));
   console.log("✔ two tools, both marked read-only");
 
   // 3. list_applications: the token owner's applications only.
   const list = JSON.parse(textOf(await client.callTool({ name: "list_applications", arguments: {} })));
-  assert.deepEqual(list.applications.map((x: { company: string }) => x.company), ["Wix"]);
-  assert.equal(list.applications[0].application_id, a.app.id);
-  const other = await client.callTool({ name: "generate_interview_brief", arguments: { application_id: b.app.id } });
+  assert.deepEqual(list.applications.map((x: { company: string }) => x.company).sort(), ["Fiverr", "Monday", "Wix"]);
+  assert.ok(list.applications.some((x: { application_id: string }) => x.application_id === a.app.id));
+  const other = await client.callTool({ name: "generate_prep_brief", arguments: { application_id: b.app.id } });
   assert.equal(other.isError, true);
   assert.match(textOf(other), /No application with this id/);
   console.log("✔ list_applications shows only A's data; A can't brief B's application");
 
   // 4. The brief: grounded quotes only, the planted instruction ignored, charged to A's allowance.
   const before = await db.llmUsage.count({ where: { userId: a.user.id, purpose: "MCP_BRIEF" } });
-  const first = await client.callTool({ name: "generate_interview_brief", arguments: { application_id: a.app.id } });
+  const first = await client.callTool({ name: "generate_prep_brief", arguments: { application_id: a.app.id } });
   assert.notEqual(first.isError, true, textOf(first));
   const brief = first.structuredContent as BriefOutput;
   // Typed JSON: the text content is the same object, and it matches the declared output schema.
@@ -89,9 +110,10 @@ async function main() {
   assert.equal(BriefOutputSchema.safeParse(brief).success, true);
   assert.equal(brief.meta.cached, false);
   if (process.env.SHOW_BRIEF) console.log(`\n${JSON.stringify(brief, null, 2)}\n`);
-  assert.deepEqual([brief.context.company, brief.context.currentStatus], ["Wix", "interviewing"]);
+  assert.deepEqual([brief.briefType, brief.context.company, brief.context.currentStatus], ["interview", "Wix", "waiting for a reply"]);
+  assert.match(brief.pendingApproval?.note ?? "", /hasn't approved the change in Telegram yet/);
   assert.ok(brief.timeline.length >= 2, "a timeline from the emails");
-  const agenda = brief.interviewAgenda;
+  const agenda = brief.agenda;
   const facts = [...brief.timeline, ...(brief.actionRequired ? [brief.actionRequired] : []), ...[agenda.format, agenda.duration, agenda.schedule, agenda.location].flatMap((f) => (f ? [f] : [])), ...agenda.people, ...agenda.topics];
   for (const f of facts) assert.ok(BODIES.some((body) => quoteAppearsIn(f.evidenceQuote, body)), `quote not in any email: ${f.evidenceQuote}`);
   const said = [...brief.timeline.map((t) => t.eventSummary), ...facts.map((f) => ("value" in f ? f.value : "")), ...brief.prepFromEmails].join(" ");
@@ -102,8 +124,19 @@ async function main() {
   assert.equal(await db.llmUsage.count({ where: { userId: a.user.id, purpose: "MCP_BRIEF" } }), before + 1);
   console.log(`✔ brief as typed JSON: ${brief.timeline.length} timeline items, ${facts.length} cited facts, all quotes in an email (${brief.meta.droppedClaims} dropped); ${brief.roleSpecificPrep.length} role tips; planted instruction ignored; charged to A`);
 
-  // 5. Asking again is free until a new email arrives.
-  const second = await client.callTool({ name: "generate_interview_brief", arguments: { application_id: a.app.id } });
+  // 4b. Nothing to prepare for: answered by code, no AI, same JSON shape.
+  for (const [app, reason] of [[rejected, /rejected/], [waiting, /waiting for a reply/]] as const) {
+    const none = await client.callTool({ name: "generate_prep_brief", arguments: { application_id: app.id } });
+    const out = none.structuredContent as BriefOutput;
+    assert.notEqual(none.isError, true);
+    assert.deepEqual([out.briefType, out.timeline.length, out.roleSpecificPrep.length], ["none", 0, 0]);
+    assert.match(out.reason ?? "", reason);
+  }
+  assert.equal(await db.llmUsage.count({ where: { userId: a.user.id, purpose: "MCP_BRIEF" } }), before + 1, "no AI for 'nothing to prepare for'");
+  console.log("✔ rejected, and applied with nothing pending: briefType none with the reason, no AI used");
+
+  // 5. Asking again is free until something changes.
+  const second = await client.callTool({ name: "generate_prep_brief", arguments: { application_id: a.app.id } });
   assert.equal((second.structuredContent as BriefOutput).meta.cached, true);
   assert.equal(await db.llmUsage.count({ where: { userId: a.user.id, purpose: "MCP_BRIEF" } }), before + 1);
   console.log("✔ a second request is served from the cache, at no cost");
@@ -113,7 +146,7 @@ async function main() {
   await db.emailMessage.create({
     data: { userId: a.user.id, applicationId: a.app.id, gmailMessageId: "eval-mcp-new", gmailThreadId: "t", fromAddress: "jobs@wix.com", subject: "Interview time", receivedAt: new Date(), snippet: "", bodyText: "Your interview is on Tuesday at 10:00.", state: "CLASSIFIED", category: "OTHER_JOB_RELATED" },
   });
-  const refused = await client.callTool({ name: "generate_interview_brief", arguments: { application_id: a.app.id } });
+  const refused = await client.callTool({ name: "generate_prep_brief", arguments: { application_id: a.app.id } });
   assert.equal(refused.isError, true);
   assert.match(textOf(refused), /Your monthly AI allowance is used up/);
   await db.llmUsage.delete({ where: { id: spent.id } });
@@ -122,20 +155,22 @@ async function main() {
   // 7. The tools' database client refuses writes, whatever a tool might try.
   await assert.rejects(readOnlyDb.jobApplication.update({ where: { id: a.app.id }, data: { status: "OFFER" } }), ReadOnlyViolation);
   await assert.rejects(readOnlyDb.statusProposal.deleteMany({ where: { userId: a.user.id } }), ReadOnlyViolation);
-  assert.equal((await db.jobApplication.findUniqueOrThrow({ where: { id: a.app.id } })).status, "INTERVIEW");
-  console.log("✔ the read-only client refuses writes; nothing changed");
+  // Still Applied: the brief reported the waiting interview card but never applied it.
+  assert.equal((await db.jobApplication.findUniqueOrThrow({ where: { id: a.app.id } })).status, "APPLIED");
+  assert.equal(await db.statusProposal.count({ where: { applicationId: a.app.id, state: "PENDING" } }), 1);
+  console.log("✔ the read-only client refuses writes; the status and the waiting card are unchanged");
 
   // 8. Every call is audited; a revoked token stops working; B's token only ever saw B.
-  assert.equal(await db.actionLog.count({ where: { userId: a.user.id, action: "MCP_TOOL_CALLED" } }), 5);
+  assert.equal(await db.actionLog.count({ where: { userId: a.user.id, action: "MCP_TOOL_CALLED" } }), 7);
   await revokeMcpToken(a.user.id);
   await assert.rejects(connect(token));
   const bClient = await connect(tokenB);
   assert.equal(JSON.parse(textOf(await bClient.callTool({ name: "list_applications", arguments: {} }))).applications[0].company, "Monday");
   await client.close();
   await bClient.close();
-  console.log("✔ 5 calls audited; a revoked token is refused; B's token sees only B");
+  console.log("✔ 7 calls audited; a revoked token is refused; B's token sees only B");
 
-  console.log("\n8/8 passed");
+  console.log("\n9/9 passed");
 }
 
 async function cleanup() {

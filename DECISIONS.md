@@ -131,7 +131,16 @@ Telegram Bot API, Gmail API and Google OAuth cost nothing. The ≤ $45 total in 
 
 **Two tools, on purpose.**
 - `list_applications`: plain data, the same function the Telegram chat uses (one tool layer, two consumers). No AI cost. It's how an agent finds the right application id: "Amazon" can mean four applications.
-- `generate_interview_brief(application_id)`: our agent's reasoning, not our rows. It reads that application's emails and asks Gemini for a brief: where it stands, a dated timeline, what the emails say about the interview (format, people, schedule, topics), suggested preparation, and what the emails don't say.
+- `generate_interview_brief(application_id)`: our agent's reasoning, not our rows. It reads that application's emails (all of them, oldest first, up to the 12 newest) and returns **typed JSON** for the calling agent, declared as the tool's `outputSchema`:
+  - `context` (from our records);
+  - `actionRequired` and `interviewAgenda` (format, duration, schedule, location, people, topics), each fact with its verbatim `evidenceQuote`, email date and subject;
+  - a dated `timeline`;
+  - `prepFromEmails` (inferred from the facts);
+  - `roleSpecificPrep`: 2–3 general tips for the role title, labelled as general knowledge; a tip that names the company is dropped as a likely made-up claim about its process;
+  - `notInEmails`;
+  - `meta` (quotes verified, claims dropped, cached).
+
+  The text content is the same JSON, for clients that don't read structured output.
 
   It's grounded the same way as the cards:
   - every timeline item and detail must cite an email and copy its sentence;

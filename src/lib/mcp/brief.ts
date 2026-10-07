@@ -5,26 +5,17 @@ import { BudgetExceeded, budgetStatus } from "@/lib/llm/budget";
 import { LlmOutputError, generateJson } from "@/lib/llm/gemini";
 import { STATUS_LABEL } from "@/lib/proposals/rules";
 import { budgetPausedText } from "@/lib/telegram/messages";
-import {
-  BRIEF_SYSTEM_PROMPT,
-  BRIEF_VERSION,
-  BriefSchema,
-  briefEmails,
-  buildBriefPrompt,
-  groundBrief,
-  renderBrief,
-  type GroundedBrief,
-} from "./brief-grounding";
+import { BRIEF_SYSTEM_PROMPT, BRIEF_VERSION, ModelBriefSchema, briefEmails, buildBriefPrompt, groundBrief, type BriefOutput } from "./brief-grounding";
 
 // generate_interview_brief: our agent's reasoning, offered to other agents. Reads one application
-// and its emails (read-only client), asks Gemini for a brief, keeps only claims whose quote is in
-// the cited email, and returns it. Paid from the token owner's AI allowance, and cached until the
+// and its emails (read-only client), asks Gemini for a brief as JSON, keeps only claims whose quote
+// is in the cited email, and returns typed JSON for the calling agent (BriefOutputSchema). Paid from the token owner's AI allowance, and cached until the
 // application gets a new email or a new status, so an agent asking every hour pays once.
 
 const CACHE_DAYS = 7;
 const BRIEFS_PER_HOUR = 10; // new briefs (cached ones are free)
 
-export type BriefResult = { ok: true; brief: GroundedBrief; text: string; cached: boolean } | { ok: false; error: string };
+export type BriefResult = { ok: true; brief: BriefOutput } | { ok: false; error: string };
 
 export async function generateInterviewBrief(userId: string, applicationId: string): Promise<BriefResult> {
   const app = await readOnlyDb.jobApplication.findFirst({
@@ -59,8 +50,8 @@ export async function generateInterviewBrief(userId: string, applicationId: stri
     orderBy: { id: "desc" },
     select: { payload: true },
   });
-  const cachedBrief = (cached?.payload as { brief?: GroundedBrief } | null)?.brief;
-  if (cachedBrief) return { ok: true, brief: cachedBrief, text: renderBrief(cachedBrief), cached: true };
+  const cachedBrief = (cached?.payload as { brief?: BriefOutput } | null)?.brief;
+  if (cachedBrief) return { ok: true, brief: { ...cachedBrief, meta: { ...cachedBrief.meta, cached: true } } };
 
   const recent = await readOnlyDb.actionLog.count({
     where: { userId, action: "MCP_TOOL_CALLED", createdAt: { gte: new Date(Date.now() - 3600_000) }, payload: { path: ["generated"], equals: true } },
@@ -78,12 +69,12 @@ export async function generateInterviewBrief(userId: string, applicationId: stri
       model: mode.models.chat,
       system: BRIEF_SYSTEM_PROMPT,
       prompt: buildBriefPrompt(app, used, history),
-      schema: BriefSchema,
+      schema: ModelBriefSchema,
       maxOutputTokens: 2048,
     });
     const brief = groundBrief(raw, app, used);
     await recordBrief(userId, app.id, cacheKey, brief);
-    return { ok: true, brief, text: renderBrief(brief), cached: false };
+    return { ok: true, brief };
   } catch (err) {
     if (err instanceof BudgetExceeded) return { ok: false, error: budgetPausedText(err.scope, err.resetsOn) };
     if (err instanceof LlmOutputError) return { ok: false, error: "The brief couldn't be generated just now. Try again in a minute." };
@@ -92,7 +83,7 @@ export async function generateInterviewBrief(userId: string, applicationId: stri
 }
 
 /** The audit row doubles as the cache: written by us, never by the tool's read-only client. */
-function recordBrief(userId: string, applicationId: string, cacheKey: string, brief: GroundedBrief) {
+function recordBrief(userId: string, applicationId: string, cacheKey: string, brief: BriefOutput) {
   return db.actionLog.create({
     data: {
       userId,

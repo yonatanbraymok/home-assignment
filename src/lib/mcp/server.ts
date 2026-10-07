@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { readOnlyDb } from "@/lib/db-readonly";
 import { READ_TOOLS } from "@/lib/tools/read";
 import { generateInterviewBrief } from "./brief";
+import { BriefOutputSchema } from "./brief-grounding";
 
 // The MCP server other agents connect to, built per request for one token's user (stateless).
 // Two tools: list_applications reads, generate_interview_brief reasons over the emails. Neither
@@ -42,19 +43,21 @@ export function createMcpServer(userId: string): McpServer {
     {
       title: "Generate an interview brief",
       description:
-        "A short, grounded brief for one application: where it stands, its timeline, what the emails say about the interview (format, people, schedule, topics), suggested preparation, and what the emails don't say. Every quote is checked word for word against the student's email. Uses AI from the student's monthly allowance; repeated calls are free until a new email arrives.",
+        "A grounded interview brief for one application, as typed JSON: context, the next step an email asks for, the interview agenda (format, duration, schedule, location, people, topics), a dated timeline, preparation from the emails, general tips for the role, and what the emails don't say. Every fact carries a verbatim quote checked against the student's email. Uses AI from the student's monthly allowance; repeated calls are free until a new email arrives.",
       inputSchema: { application_id: z.string().min(1).describe("application_id from list_applications") },
+      outputSchema: BriefOutputSchema.shape, // clients can validate structuredContent against it
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
     async ({ application_id }) =>
       guarded(userId, "generate_interview_brief", { application_id }, async () => {
         const result = await generateInterviewBrief(userId, application_id);
         if (!result.ok) return { content: [{ type: "text" as const, text: result.error }], isError: true };
+        // The same JSON twice: structuredContent for clients that read it, text for those that don't.
         return {
-          content: [{ type: "text" as const, text: result.text }],
-          structuredContent: { ...result.brief, cached: result.cached },
+          content: [{ type: "text" as const, text: JSON.stringify(result.brief) }],
+          structuredContent: result.brief,
           // A newly generated brief is already logged with its content (it's also the cache).
-          logged: !result.cached,
+          logged: !result.brief.meta.cached,
         };
       }),
   );

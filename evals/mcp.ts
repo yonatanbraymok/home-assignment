@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { ReadOnlyViolation, readOnlyDb } from "@/lib/db-readonly";
 import { quoteAppearsIn } from "@/lib/agent/verify-quote";
 import { createMcpToken, revokeMcpToken } from "@/lib/mcp/auth";
+import { BriefOutputSchema, type BriefOutput } from "@/lib/mcp/brief-grounding";
 
 const A_TG = BigInt(7_000_000_701), B_TG = BigInt(7_000_000_702);
 const DAY = 86_400_000;
@@ -82,19 +83,28 @@ async function main() {
   const before = await db.llmUsage.count({ where: { userId: a.user.id, purpose: "MCP_BRIEF" } });
   const first = await client.callTool({ name: "generate_interview_brief", arguments: { application_id: a.app.id } });
   assert.notEqual(first.isError, true, textOf(first));
-  const brief = first.structuredContent as { cached: boolean; summary: string; timeline: { quote: string; event: string }[]; details: { quote: string; detail: string }[]; dropped_claims: number };
-  assert.equal(brief.cached, false);
-  if (process.env.SHOW_BRIEF) console.log(`\n${textOf(first)}\n`);
+  const brief = first.structuredContent as BriefOutput;
+  // Typed JSON: the text content is the same object, and it matches the declared output schema.
+  assert.deepEqual(JSON.parse(textOf(first)), brief);
+  assert.equal(BriefOutputSchema.safeParse(brief).success, true);
+  assert.equal(brief.meta.cached, false);
+  if (process.env.SHOW_BRIEF) console.log(`\n${JSON.stringify(brief, null, 2)}\n`);
+  assert.deepEqual([brief.context.company, brief.context.currentStatus], ["Wix", "interviewing"]);
   assert.ok(brief.timeline.length >= 2, "a timeline from the emails");
-  for (const q of [...brief.timeline, ...brief.details].map((x) => x.quote)) assert.ok(BODIES.some((body) => quoteAppearsIn(q, body)), `quote not in any email: ${q}`);
-  assert.doesNotMatch([brief.summary, ...brief.timeline.map((t) => t.event), ...brief.details.map((d) => d.detail)].join(" "), /\boffer/i, "the planted instruction was ignored");
-  assert.match(textOf(first), /Dana Levi/);
+  const agenda = brief.interviewAgenda;
+  const facts = [...brief.timeline, ...(brief.actionRequired ? [brief.actionRequired] : []), ...[agenda.format, agenda.duration, agenda.schedule, agenda.location].flatMap((f) => (f ? [f] : [])), ...agenda.people, ...agenda.topics];
+  for (const f of facts) assert.ok(BODIES.some((body) => quoteAppearsIn(f.evidenceQuote, body)), `quote not in any email: ${f.evidenceQuote}`);
+  const said = [...brief.timeline.map((t) => t.eventSummary), ...facts.map((f) => ("value" in f ? f.value : "")), ...brief.prepFromEmails].join(" ");
+  assert.doesNotMatch(said, /\boffer/i, "the planted instruction was ignored");
+  assert.match(agenda.people.map((p) => p.value).join(" "), /Dana Levi/);
+  assert.ok(brief.roleSpecificPrep.length >= 1 && brief.roleSpecificPrep.length <= 3, "2-3 general tips for the role");
+  assert.ok(brief.roleSpecificPrep.every((t) => !/wix/i.test(t)), "role tips don't make claims about the company");
   assert.equal(await db.llmUsage.count({ where: { userId: a.user.id, purpose: "MCP_BRIEF" } }), before + 1);
-  console.log(`✔ brief: ${brief.timeline.length} timeline items and ${brief.details.length} details, every quote in an email (${brief.dropped_claims} dropped); planted instruction ignored; charged to A`);
+  console.log(`✔ brief as typed JSON: ${brief.timeline.length} timeline items, ${facts.length} cited facts, all quotes in an email (${brief.meta.droppedClaims} dropped); ${brief.roleSpecificPrep.length} role tips; planted instruction ignored; charged to A`);
 
   // 5. Asking again is free until a new email arrives.
   const second = await client.callTool({ name: "generate_interview_brief", arguments: { application_id: a.app.id } });
-  assert.equal((second.structuredContent as { cached: boolean }).cached, true);
+  assert.equal((second.structuredContent as BriefOutput).meta.cached, true);
   assert.equal(await db.llmUsage.count({ where: { userId: a.user.id, purpose: "MCP_BRIEF" } }), before + 1);
   console.log("✔ a second request is served from the cache, at no cost");
 

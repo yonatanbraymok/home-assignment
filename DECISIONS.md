@@ -104,7 +104,7 @@ How it's enforced: (1) no write tools exist on the server; (2) tool handlers use
 | Step | What I did | Decisions / findings |
 |---|---|---|
 | 0. Planning (2026-10-07) | Read the brief, picked the problem, wrote an internal build plan (architecture, schema, state machines) and this skeleton, checked current package versions and platform limits | Pinned Prisma 7.10.0. Scheduled sync with Supabase pg_cron because Vercel Hobby cron is daily only. Flagged Google's 7-day token expiry in "Testing" mode. |
-| 1. Scaffold + DB | **TODO** | |
+| 1. Scaffold + DB (2026-10-07) | Scaffolded Next.js 16, created the Supabase project, wrote the Prisma schema (6 tables), applied the first migration, added the DB client and a `/api/health` check. Smoke-tested through the transaction pooler: a write inside a transaction, a 64-bit Telegram ID, and rollback. | Migrations are generated with `prisma migrate diff` and applied with `migrate deploy`, so no shadow database is needed on Supabase. "One pending proposal per application" is enforced by a partial unique index in the database, not only in code. |
 | 2. Telegram | **TODO** | |
 | 3. Gmail sync | **TODO** | |
 | 4. Classifier + approval | **TODO** | |
@@ -128,7 +128,8 @@ I used Claude Code (Claude Opus) as a pair programmer for planning, scaffolding 
 
 | When | What the AI said or did | How I caught it | Fix |
 |---|---|---|---|
-| | **TODO**: logged as it happens | | |
+| Phase 0 plan | Said the partial unique index couldn't be expressed in the Prisma schema and planned to add it as raw SQL in a migration | While building Phase 1, tested Prisma 7.10's `partialIndexes` preview feature in a scratch project; it works | Index declared in the schema. Raw SQL would have looked like drift, and a later migration would have dropped it. |
+| Phase 0 plan | Put `CREATE ROLE mcp_readonly ... PASSWORD '...'` in the list of migration SQL | Noticed while writing the migration that it would commit a database password to git | The role is created by hand in the Supabase SQL editor in Phase 7 |
 
 ## 11. Evals
 

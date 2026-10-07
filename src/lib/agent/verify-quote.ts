@@ -37,3 +37,19 @@ export function jobRefAppearsIn(ref: string, ...sources: (string | null | undefi
   const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, "u");
   return sources.some((source) => source && pattern.test(normalizeForMatch(source)));
 }
+
+// Text the chat answer puts in double quotes (“…”, "…", «…»): it presents these as quoted sources.
+const QUOTED_SPAN = /["“”«»„]([^"“”«»„\n]{6,300})["“”«»„]/g;
+
+/** Quoted spans in `answer` that don't appear verbatim in any string of the tool results. */
+export function unverifiedQuotes(answer: string, toolResults: unknown[]): string[] {
+  const haystack = normalizeForMatch(collectStrings(toolResults).join("\n"));
+  return [...answer.matchAll(QUOTED_SPAN)].map((m) => m[1]).filter((q) => !haystack.includes(normalizeForMatch(q)));
+}
+
+function collectStrings(value: unknown, out: string[] = []): string[] {
+  if (typeof value === "string") out.push(value);
+  else if (Array.isArray(value)) value.forEach((v) => collectStrings(v, out));
+  else if (value && typeof value === "object") Object.values(value).forEach((v) => collectStrings(v, out));
+  return out;
+}

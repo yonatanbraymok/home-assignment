@@ -10,6 +10,9 @@ import { wordingSupportsCategory } from "./signals";
 import { jobRefAppearsIn, quoteAppearsIn } from "./verify-quote";
 
 const MAX_ATTEMPTS = 3;
+// A claim older than this belongs to a run that died; another run may take the email over.
+const CLAIM_TTL_MS = 5 * 60_000;
+const CLAIMABLE = ["NEW", "FAILED", "DEFERRED_BUDGET"] as const;
 
 export type AnalysisSummary = {
   analyzed: number;
@@ -30,23 +33,33 @@ export async function analyzePendingEmails(userId: string, limit: number): Promi
   const summary: AnalysisSummary = { analyzed: 0, proposals: 0, noChange: 0, notJobRelated: 0, unverified: 0, failed: 0, deferred: 0 };
   if (!llmConfigured()) return { ...summary, skippedNotConfigured: true };
 
+  const staleClaim = () => ({ state: "ANALYZING" as const, claimedAt: { lt: new Date(Date.now() - CLAIM_TTL_MS) } });
   const queued = await db.emailMessage.findMany({
-    where: { userId, state: { in: ["NEW", "FAILED", "DEFERRED_BUDGET"] } },
+    where: { userId, OR: [{ state: { in: [...CLAIMABLE] } }, staleClaim()] },
     orderBy: { receivedAt: "asc" },
     take: limit * 3, // FAILED ones past MAX_ATTEMPTS are filtered below
   });
   const emails = queued.filter((e) => attemptsOf(e.analysis) < MAX_ATTEMPTS).slice(0, limit);
 
-  for (const email of emails) {
+  for (const [index, email] of emails.entries()) {
+    // Claim it first: if the cron run and a /sync overlap, only one of them analyses each email.
+    const { count: claimed } = await db.emailMessage.updateMany({
+      where: { id: email.id, OR: [{ state: { in: [...CLAIMABLE] } }, staleClaim()] },
+      data: { state: "ANALYZING", claimedAt: new Date() },
+    });
+    if (claimed === 0) continue;
+
     const attempts = attemptsOf(email.analysis) + 1;
     let classification: Classification;
     try {
       classification = await classifyEmail(email, userId);
     } catch (err) {
       if (err instanceof BudgetExceeded) {
-        // Leave the rest queued; they're picked up once the budget allows.
-        await db.emailMessage.updateMany({ where: { id: { in: emails.map((e) => e.id) }, state: { not: "CLASSIFIED" } }, data: { state: "DEFERRED_BUDGET" } });
-        summary.deferred = emails.length - summary.analyzed;
+        // Leave this one and the rest queued; they're picked up once the budget allows.
+        const rest = emails.slice(index + 1).map((e) => e.id);
+        await db.emailMessage.updateMany({ where: { id: email.id }, data: { state: "DEFERRED_BUDGET" } });
+        await db.emailMessage.updateMany({ where: { id: { in: rest }, state: { in: ["NEW", "FAILED"] } }, data: { state: "DEFERRED_BUDGET" } });
+        summary.deferred = emails.length - index;
         break;
       }
       await markFailed(email.id, attempts, err instanceof Error ? err.message : String(err));

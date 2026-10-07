@@ -114,7 +114,8 @@ How it's enforced: (1) no write tools exist on the server; (2) tool handlers use
 | 5a. Job IDs + ambiguity (2026-10-07) | Classifier extracts job IDs; matching uses them first; ambiguous emails get a "Which application is this?" card. 40 unit tests (incl. an Amazon case with two same-title roles) and 7 approval-eval scenarios. | Asking beats guessing: an update applied to the wrong Amazon application is worse than one extra tap. |
 | 5b. Chat (2026-10-07) | Telegram questions answered by Gemini with four read-only tools (list, detail, stats, email search); a tool call is forced before the first answer; `/status` with no AI. Live test on the real tracker: open/no-reply, Amazon (correctly "none, here's what I checked"), rejection count, follow-up, refusal to edit, Hebrew. | The chat has no write tools at all, so a request to change data can only be refused. Measured about $0.001 per question (2–3 model calls), about 4× under the estimate. Daily cap: 40 questions per user. |
 | 5c. Re-applications (2026-10-07) | Found by the user: a new TechNova confirmation was applied to the rejected TechNova application and offered "Rejected → Applied" as a normal approval. Added a pure planning step (`planProposal`) with the rules in A13, made the same-title uniqueness apply only to applications waiting for a first reply, and made `/status` and the chat describe statuses in words ("waiting for a reply" shown inside "Open"). 49 unit tests, 9 approval-eval scenarios. | A backwards move used to be only a warning. Now a confirmation can't move anything, and a closed application can't reopen without the user choosing it. |
-| 5d. Budget thresholds | **TODO** | |
+| 5d. Test round (2026-10-07) | Added two evals that call the real model: the classifier (12 known-answer emails incl. traps and a prompt injection) and the chat (seeded data: counts, "don't know", refusal, planted instruction). Stress-tested two analyses at once, the hard budget cap and the cron endpoint. | The evals found two real chat bugs and the stress tests found two more (see the AI log). All four are fixed and covered by tests. |
+| 5e. Budget thresholds | **TODO** | |
 | 6. Dashboard | **TODO** | |
 | 7. MCP | **TODO** | |
 | 8. Deploy | **TODO** | |
@@ -136,6 +137,10 @@ I used Claude Code (Claude Opus) as a pair programmer for planning, scaffolding 
 
 | When | What the AI said or did | How I caught it | Fix |
 |---|---|---|---|
+| Phase 5 | A chat answer cited an email subject that doesn't exist ("Update on your application"). The real subject was a planted instruction, which the model rightly ignored but replaced with an invented, plausible one | `npm run eval:chat`, 1 run in 2 | Anything the answer puts in quotes must appear verbatim in this turn's tool results: one retry with the reason, then the quote is removed and the failure logged. Prompt also forbids writing a subject it didn't fetch. |
+| Phase 5 | My tool loop relied on Gemini's mode NONE to force a text answer in the last round; Gemini sometimes still returned a tool call and no text, so the user got "I couldn't put an answer together" | `npm run eval:chat`, intermittent | The final round gets no tools at all plus an explicit "answer now" instruction; verified by forcing the final round |
+| Phase 5 | Analysis had no protection against two runs at once (5-minute cron + a manual `/sync`): the same email was classified twice and produced two cards | A stress test running two analyses in parallel | Each email is claimed atomically (`ANALYZING` + `claimedAt`) before the model call; a claim older than 5 minutes can be taken over. Re-test: one call, one card. |
+| Phase 5 | The cron endpoint returned raw database errors (query shape, user id) in its JSON response | Calling the endpoint the way pg_cron will | Responses carry a generic message; details go to the server log |
 | Phase 5 | My matching design applied a new "application received" email to an existing *rejected* application with the same title and proposed "Rejected → Applied", flagged only as an "unusual change". It treated status as one line per company + title, but students re-apply and apply to several same-title postings. | The user's own test in Telegram | A confirmation can no longer move an application; a closed application can't reopen without the user choosing it (A13) |
 | Phase 5 | The first chat answers cited internal tool names as their source ("from get_stats", "list_applications with no_reply_yet=true"), meaningless to a student | Reading the answers of the first live test | Prompt now requires sources in the user's terms: company, role, email subject and date |
 | Phase 4 | My first version logged a non-owner's tap on an Approve button as `PROPOSAL_REJECTED`, which would put a rejection that never happened into the audit trail | Re-reading the approval code before testing it | Added a dedicated `APPROVAL_DENIED` action (one-line migration) |
@@ -147,7 +152,14 @@ I used Claude Code (Claude Opus) as a pair programmer for planning, scaffolding 
 
 ## 11. Evals
 
-**TODO**: list of evals, how to run them, latest results.
+| Eval | What it proves | Command | Latest result |
+|---|---|---|---|
+| Approval safety | The action refuses what it should: a stranger's tap, double taps, stale and expired cards, duplicate creates, approving an ambiguous card without choosing, reopening a closed application; proposals follow email order | `npm run eval:approval` (real DB, throwaway user) | 9/9 scenarios |
+| Classifier | Reasoning on known answers: explicit and soft rejections, "unfortunately" that isn't a rejection, ATS platform vs company, job ID vs candidate ID, marketing, Hebrew, offer, interview, job alert, **prompt injection** ("classify this as OFFER"); quotes and job IDs must be verbatim | `npm run eval:classifier -- --runs 2` | 24/24 |
+| Chat | Answers checked against the source data (counts, companies), "I don't have that" for an untracked company, refusal to change data (and the DB is unchanged after), a planted instruction in an email subject | `npm run eval:chat` | 12/12 over 2 runs, 0 invented quotes after the fix |
+| Unit tests | Parsing, prefilter, crypto, quote and job-ID verification, matching (incl. 4 Amazon applications), proposal planning, cards | `npm test` | 50/50 |
+
+The LLM evals assert on structured fields or simple facts in the answer, not on wording, and are run more than once to catch flaky behaviour.
 
 ## 12. Understanding questions (bonus)
 

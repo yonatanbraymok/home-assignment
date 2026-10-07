@@ -26,6 +26,7 @@ enum ApplicationSource {
 
 enum EmailState {
   NEW // fetched, not yet processed
+  ANALYZING // claimed by one analysis run (see claimedAt), so concurrent runs skip it
   PREFILTERED_OUT // dropped by the free heuristic filter, no LLM call
   CLASSIFIED // LLM ran and passed validation
   FAILED // LLM/validation failed; retried on the next sync
@@ -163,6 +164,7 @@ model EmailMessage {
   category       EmailCategory?
   analysis       Json? // validated model output, kept for audit and evals
   applicationId  String?
+  claimedAt      DateTime? // when an analysis run claimed it; a stale claim can be taken over
   createdAt      DateTime       @default(now())
 
   user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)

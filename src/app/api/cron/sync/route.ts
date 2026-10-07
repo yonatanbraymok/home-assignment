@@ -26,9 +26,9 @@ export async function POST(req: Request) {
     try {
       analyzed.push({ userId, ...(await analyzePendingEmails(userId, ANALYZE_PER_USER)) });
     } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      console.error(`analysis failed for user ${userId}:`, error);
-      analyzed.push({ userId, error });
+      // Details go to the server log only; the response must not carry internals.
+      console.error(`analysis failed for user ${userId}:`, err instanceof Error ? err.message : err);
+      analyzed.push({ userId, error: "analysis failed (see server log)" });
     }
   }
   return Response.json({ ok: true, expired, synced, analyzed });

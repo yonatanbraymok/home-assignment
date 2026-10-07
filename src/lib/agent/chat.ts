@@ -3,13 +3,14 @@ import { db } from "@/lib/db";
 import { BudgetExceeded } from "@/lib/llm/budget";
 import { answerWithTools, llmConfigured } from "@/lib/llm/gemini";
 import { readToolDeclarations, runReadTool } from "@/lib/tools/read";
+import { unverifiedQuotes } from "./verify-quote";
 
 // Answers a user's question about their applications, using only the read-only tools.
 
 const DAILY_QUESTION_LIMIT = 40; // twice the brief's 20 uses/day; protects the budget from one user
 const FOLLOW_UP_WINDOW_MS = 30 * 60_000;
 const FOLLOW_UP_TURNS = 3;
-const MAX_TOOL_ROUNDS = 3;
+const MAX_TOOL_ROUNDS = 4;
 const MAX_ANSWER_CHARS = 3800; // Telegram's limit is 4096
 const TIME_ZONE = "Asia/Jerusalem";
 
@@ -23,9 +24,10 @@ Today is ${today}. Your data: applications tracked from ${source}, which the use
 
 Rules:
 - Use the tools for every fact. Never state a company, role, status, date or number that didn't come from a tool result in this conversation.
-- For counts use the "count" or total fields the tools return; don't count rows yourself.
+- For counts use the "count" or total fields the tools return; don't count rows yourself. When asked "how many", start with the number.
 - Describe statuses in words (use status_label: "waiting for a reply", "interviewing", ...), never as codes like APPLIED. "Open" means not rejected or withdrawn; "waiting for a reply" is the part of open that hasn't heard back at all.
 - Name your sources in the user's terms: for each application give company and role (and the job ID only if it has one); for a fact from an email give its subject and date. Say "your tracker", never tool names, parameters or field names.
+- Anything you put in double quotes must be copied exactly from a tool result (an email subject, an evidence quote). If you didn't fetch an email's subject, don't mention one; never write a plausible-looking subject.
 - If the tools return nothing relevant, say so plainly and say what you checked, e.g. "I don't see any Amazon applications in the emails I track from ${coverage.gmail ?? "your inbox"}". Never guess.
 - Keep facts and interpretation apart. Mark anything you infer as an inference with a confidence (low/medium/high), e.g. "no email for 35 days (fact); companies often don't reply to rejections, so it may be closed (inference, low confidence)".
 - You can't change anything. If asked to update an application, explain that changes come from the email cards the user approves, and that you can't make changes yourself.
@@ -77,7 +79,7 @@ export async function answerQuestion(userId: string, question: string): Promise<
   });
 
   try {
-    const { text, toolCalls } = await answerWithTools({
+    const { text, toolCalls, toolResults } = await answerWithTools({
       purpose: "CHAT",
       userId,
       system,
@@ -87,10 +89,26 @@ export async function answerQuestion(userId: string, question: string): Promise<
       runTool: (name, args) => runReadTool(db, userId, name, args),
       maxToolRounds: MAX_TOOL_ROUNDS,
       maxOutputTokens: 2048,
+      // Grounding check: quoted text must exist in what the tools returned in this turn.
+      checkAnswer: (draft, results) => {
+        const bad = unverifiedQuotes(draft, results);
+        return bad.length
+          ? `These quoted texts are not in the tool results: ${bad.map((b) => `"${b}"`).join(", ")}. Rewrite the answer quoting only text that appears exactly in the tool results, or without quotes.`
+          : null;
+      },
     });
-    const answer = (text || "I couldn't put an answer together. Please rephrase the question.").slice(0, MAX_ANSWER_CHARS);
+    // Still unverified after the retry: remove the quote rather than show an invented source.
+    const unverified = unverifiedQuotes(text, toolResults);
+    let answer = text || "I couldn't put an answer together. Please rephrase the question.";
+    for (const q of unverified) answer = answer.replace(q, "[quote removed: not found in your data]");
+    answer = answer.slice(0, MAX_ANSWER_CHARS);
     await db.actionLog.create({
-      data: { userId, actor: "AGENT", action: "CHAT_ANSWERED", payload: { question, answer, toolCalls: JSON.parse(JSON.stringify(toolCalls)) } },
+      data: {
+        userId,
+        actor: "AGENT",
+        action: "CHAT_ANSWERED",
+        payload: { question, answer, toolCalls: JSON.parse(JSON.stringify(toolCalls)), ...(unverified.length ? { groundingFailure: unverified } : {}) },
+      },
     });
     return { kind: "answer", text: answer };
   } catch (err) {

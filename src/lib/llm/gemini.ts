@@ -99,10 +99,13 @@ export async function generateJson<T>(opts: {
 
 export type ToolDeclaration = { name: string; description: string; parametersJsonSchema: Record<string, unknown> };
 
+const FINAL_ROUND_INSTRUCTION = "Answer the question now, in text, using only the tool results above.";
+
 /**
  * A conversation turn where the model can call (read-only) tools before answering.
- * The first round must call a tool, so every answer is based on fetched data; the last round
- * can't, so the loop always ends with text.
+ * The first round must call a tool, so every answer is based on fetched data. The last round gets
+ * no tools at all (mode NONE alone wasn't enough: Gemini sometimes still returned a tool call and
+ * no text), so the loop always ends with text.
  */
 export async function answerWithTools(opts: {
   purpose: LlmPurpose;
@@ -115,14 +118,18 @@ export async function answerWithTools(opts: {
   maxToolRounds: number;
   maxOutputTokens: number;
   model?: string;
-}): Promise<{ text: string; toolCalls: { name: string; args: unknown }[] }> {
+  /** Checks the final text against the tool results; returns feedback for one retry, or null if fine. */
+  checkAnswer?: (text: string, toolResults: unknown[]) => string | null;
+}): Promise<{ text: string; toolCalls: { name: string; args: unknown }[]; toolResults: unknown[] }> {
   const model = opts.model ?? defaultModel();
   const contents: Content[] = [...opts.history, { role: "user", parts: [{ text: opts.message }] }];
   const toolCalls: { name: string; args: unknown }[] = [];
+  const toolResults: unknown[] = [];
+  let retriedAnswer = false;
 
   for (let round = 0; ; round++) {
     const lastRound = round >= opts.maxToolRounds;
-    const mode = round === 0 ? FunctionCallingConfigMode.ANY : lastRound ? FunctionCallingConfigMode.NONE : FunctionCallingConfigMode.AUTO;
+    if (lastRound) contents.at(-1)!.parts!.push({ text: FINAL_ROUND_INSTRUCTION });
     const response = await call({
       purpose: opts.purpose,
       userId: opts.userId,
@@ -130,15 +137,30 @@ export async function answerWithTools(opts: {
       contents,
       config: {
         systemInstruction: opts.system,
-        tools: [{ functionDeclarations: opts.tools }],
-        toolConfig: { functionCallingConfig: { mode } },
         maxOutputTokens: opts.maxOutputTokens,
+        ...(lastRound
+          ? {}
+          : {
+              tools: [{ functionDeclarations: opts.tools }],
+              toolConfig: { functionCallingConfig: { mode: round === 0 ? FunctionCallingConfigMode.ANY : FunctionCallingConfigMode.AUTO } },
+            }),
       },
     });
 
     const calls = response.functionCalls ?? [];
+    if (process.env.LLM_DEBUG) {
+      console.log(`[llm] round ${round}${lastRound ? " (final)" : ""}: finish=${response.candidates?.[0]?.finishReason} calls=${calls.map((c) => c.name).join(",") || "-"}`);
+    }
     if (!calls.length || lastRound) {
-      return { text: response.text?.trim() ?? "", toolCalls };
+      // Read only text parts (response.text warns and concatenates when tool calls are present).
+      const text = (response.candidates?.[0]?.content?.parts ?? []).filter((p) => p.text && !p.thought).map((p) => p.text).join("").trim();
+      const feedback = !retriedAnswer && opts.checkAnswer?.(text, toolResults);
+      if (!feedback) return { text, toolCalls, toolResults };
+      // One retry, text only, with the reason the answer was refused.
+      retriedAnswer = true;
+      contents.push({ role: "model", parts: [{ text }] }, { role: "user", parts: [{ text: feedback }] });
+      round = opts.maxToolRounds - 1; // the next round is the final, tool-free one
+      continue;
     }
     // Send the model's turn back unchanged: Gemini 3 needs its thought signatures on the next call.
     const modelTurn = response.candidates?.[0]?.content;
@@ -152,6 +174,7 @@ export async function answerWithTools(opts: {
       } catch (err) {
         result = { error: err instanceof Error ? err.message : "Tool failed" };
       }
+      toolResults.push(result);
       results.push({ functionResponse: { id: fc.id, name: fc.name, response: { result } } });
     }
     contents.push({ role: "user", parts: results });

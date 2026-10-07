@@ -44,7 +44,7 @@ export type ClassifiableEmail = {
   bodyText: string | null;
 };
 
-export function classifyEmail(email: ClassifiableEmail, userId: string): Promise<Classification> {
+export function classifyEmail(email: ClassifiableEmail, userId: string | null, purpose: "CLASSIFY_EMAIL" | "EVAL" = "CLASSIFY_EMAIL"): Promise<Classification> {
   const prompt = [
     `From: ${email.fromName ? `${email.fromName} <${email.fromAddress}>` : email.fromAddress}`,
     `Date: ${email.receivedAt.toISOString()}`,
@@ -56,7 +56,7 @@ export function classifyEmail(email: ClassifiableEmail, userId: string): Promise
   ].join("\n");
 
   return generateJson({
-    purpose: "CLASSIFY_EMAIL",
+    purpose,
     userId,
     system: SYSTEM_PROMPT,
     prompt,

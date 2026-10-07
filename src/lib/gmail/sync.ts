@@ -111,7 +111,8 @@ export async function syncAllMailboxes(budgetMs: number): Promise<MailboxRunResu
       results.push({ userId: user.id, ok: true, summary: await syncMailbox(user) });
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      results.push({ userId: user.id, ok: false, error });
+      // Only the known, user-facing reason goes into the response; details stay in the log.
+      results.push({ userId: user.id, ok: false, error: err instanceof GmailAccessRevoked ? error : "sync failed (see server log)" });
       if (err instanceof GmailAccessRevoked) {
         await notifyOnce({
           userId: user.id,

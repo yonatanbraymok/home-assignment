@@ -99,6 +99,30 @@ async function main() {
   assert.equal(await db.jobApplication.count({ where: { userId: user.id, company: "Amazon" } }), 3);
   console.log("✔ a stale choice is refused; 'it's a new application' creates one");
 
+  // 7. after a reply, a new confirmation is a new application (never a reopened one)
+  const tn = await db.jobApplication.create({ data: { userId: user.id, company: "TechNova", roleTitle: "SWE Intern", dedupeKey: "technova|swe intern", status: "REJECTED", source: "MANUAL" } });
+  const tnRows = () => db.jobApplication.findMany({ where: { userId: user.id, company: "TechNova" }, select: { id: true, company: true, companyDomain: true, roleTitle: true, jobRef: true, status: true } });
+  const { matchApplication } = await import("@/lib/agent/match");
+  const confirm = (category: "APPLICATION_RECEIVED" | "INTERVIEW_INVITE") => ({ category, company: "TechNova", roleTitle: "SWE Intern", jobRef: null, evidenceQuote: "q", reasoning: "r", confidence: "HIGH" as const });
+  const propose = async (id: string, category: "APPLICATION_RECEIVED" | "INTERVIEW_INVITE") => {
+    const e = await mkEmail(id, 0);
+    return proposeFromEmail({ userId: user.id, email: e, classification: confirm(category), match: matchApplication(confirm(category), "gmail.com", await tnRows()), wordingSupportsCategory: true });
+  };
+  const c1 = await propose("e13", "APPLICATION_RECEIVED");
+  const c1row = await db.statusProposal.findUniqueOrThrow({ where: { id: c1.proposalId! } });
+  assert.equal(c1row.kind, "CREATE_APPLICATION");
+  assert.equal((await approveProposal(c1row.id, OWNER)).kind, "executed");
+  assert.deepEqual((await tnRows()).map((r) => r.status).sort(), ["APPLIED", "REJECTED"]);
+  assert.equal((await db.jobApplication.findUniqueOrThrow({ where: { id: tn.id } })).status, "REJECTED");
+  const repeat = await propose("e14", "APPLICATION_RECEIVED");
+  assert.equal(repeat.proposalId, null);
+  console.log("✔ confirmation after a rejection creates a second application; the rejected one stays rejected; a repeat confirmation changes nothing");
+
+  const c3 = await propose("e15", "INTERVIEW_INVITE");
+  const c3row = await db.statusProposal.findUniqueOrThrow({ where: { id: c3.proposalId! } });
+  assert.equal(Array.isArray(c3row.candidates) && c3row.candidates.length, 2);
+  console.log("✔ an interview invite that fits both TechNova applications asks which one");
+
   const audit = await db.actionLog.groupBy({ by: ["action"], where: { userId: user.id }, _count: true });
   console.log("audit:", Object.fromEntries(audit.map((x) => [x.action, x._count])));
 }

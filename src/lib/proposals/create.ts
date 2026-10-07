@@ -3,7 +3,8 @@ import type { ApplicationStatus, Confidence } from "@/generated/prisma/enums";
 import type { Classification } from "@/lib/agent/classify";
 import { dedupeKey, type MatchResult, type MatchableApplication } from "@/lib/agent/match";
 import { quietly, refreshCard, sendCard } from "./cards-io";
-import { CATEGORY_TO_STATUS, PROPOSAL_TTL_MS, STATUS_LABEL, capConfidence, isExpectedTransition } from "./rules";
+import { planProposal } from "./plan";
+import { CATEGORY_TO_STATUS, PROPOSAL_TTL_MS, STATUS_LABEL, capConfidence } from "./rules";
 
 export type ProposeOutcome = { proposalId: string } | { proposalId: null; reason: string };
 
@@ -28,9 +29,15 @@ export async function proposeFromEmail(input: {
   const toStatus = CATEGORY_TO_STATUS[c.category];
   if (!toStatus) return { proposalId: null, reason: "no status change implied" };
 
-  const warnings = [...(input.extraWarnings ?? []), ...match.warnings];
-  let cap: Confidence = "HIGH";
-  if (match.kind !== "matched" || match.strength === "weak") cap = "MEDIUM";
+  const plan = planProposal(toStatus, match);
+  if (plan.action === "none") return { proposalId: null, reason: plan.reason };
+  if (plan.action === "create" && !c.company) return { proposalId: null, reason: "no company named in the email" };
+
+  const warnings = [...(input.extraWarnings ?? []), ...plan.warnings];
+  // Confidence is capped when it's uncertain which application the email is about.
+  const certainTarget =
+    (plan.action === "update" && match.kind === "matched" && match.strength === "strong") || (plan.action === "create" && match.kind === "none");
+  let cap: Confidence = certainTarget ? "HIGH" : "MEDIUM";
   if (!input.wordingSupportsCategory) {
     cap = "LOW";
     warnings.push(`The email doesn't use typical "${STATUS_LABEL[toStatus]}" wording; check it yourself`);
@@ -44,54 +51,52 @@ export async function proposeFromEmail(input: {
     evidenceQuote: c.evidenceQuote,
     confidence: capConfidence(c.confidence, cap),
     expiresAt: new Date(Date.now() + PROPOSAL_TTL_MS),
+    warnings,
   };
 
-  if (match.kind === "matched") {
-    const app = match.application;
-    if (app.status === toStatus) return { proposalId: null, reason: `already ${toStatus}` };
-    if (!isExpectedTransition(app.status, toStatus)) {
-      warnings.push(`Unusual change: ${STATUS_LABEL[app.status]} → ${STATUS_LABEL[toStatus]}`);
+  switch (plan.action) {
+    case "update": {
+      const app = plan.application;
+      return createReplacingOlder({ applicationId: app.id }, email.receivedAt, {
+        ...base,
+        kind: "UPDATE_STATUS",
+        applicationId: app.id,
+        fromStatus: app.status,
+        company: app.company,
+        roleTitle: app.roleTitle,
+      });
     }
-    return createReplacingOlder({ applicationId: app.id }, email.receivedAt, {
-      ...base,
-      kind: "UPDATE_STATUS",
-      applicationId: app.id,
-      fromStatus: app.status,
-      company: app.company,
-      roleTitle: app.roleTitle,
-      warnings,
-    });
+    case "ask": {
+      const options = plan.candidates.slice(0, MAX_CANDIDATES);
+      const candidates: Candidate[] = options.map((a) => ({
+        applicationId: a.id,
+        label: `${a.roleTitle}${a.jobRef ? ` #${a.jobRef}` : ""} (${STATUS_LABEL[a.status]})`,
+        status: a.status,
+      }));
+      return createProposal({
+        ...base,
+        kind: "UPDATE_STATUS",
+        applicationId: null,
+        fromStatus: null,
+        company: options[0].company,
+        roleTitle: c.roleTitle ?? options[0].roleTitle,
+        candidates,
+      });
+    }
+    case "create": {
+      const company = c.company!;
+      const roleTitle = c.roleTitle ?? "Role not stated";
+      if (!c.roleTitle) warnings.push("The email doesn't name the role");
+      return createReplacingOlder({ kind: "CREATE_APPLICATION", dedupeKey: dedupeKey(company, roleTitle, c.jobRef) }, email.receivedAt, {
+        ...base,
+        kind: "CREATE_APPLICATION",
+        applicationId: null,
+        fromStatus: null,
+        company,
+        roleTitle,
+      });
+    }
   }
-
-  if (match.kind === "ambiguous") {
-    // Only applications this email would actually change; whichever it is, the user decides.
-    const options = match.candidates.filter((a) => a.status !== toStatus).slice(0, MAX_CANDIDATES);
-    if (!options.length) return { proposalId: null, reason: `every candidate is already ${toStatus}` };
-    const candidates: Candidate[] = options.map((a) => ({
-      applicationId: a.id,
-      label: `${a.roleTitle}${a.jobRef ? ` #${a.jobRef}` : ""} (${STATUS_LABEL[a.status]})`,
-      status: a.status,
-    }));
-    return createProposal({
-      ...base,
-      kind: "UPDATE_STATUS",
-      applicationId: null,
-      fromStatus: null,
-      company: options[0].company,
-      roleTitle: c.roleTitle ?? "Role not stated",
-      candidates,
-      warnings,
-    });
-  }
-
-  if (!c.company) return { proposalId: null, reason: "no company named in the email" };
-  const roleTitle = c.roleTitle ?? "Role not stated";
-  if (!c.roleTitle) warnings.push("The email doesn't name the role");
-  return createReplacingOlder(
-    { kind: "CREATE_APPLICATION", dedupeKey: dedupeKey(c.company, roleTitle, c.jobRef) },
-    email.receivedAt,
-    { ...base, kind: "CREATE_APPLICATION", applicationId: null, fromStatus: null, company: c.company, roleTitle, warnings },
-  );
 }
 
 type NewProposal = {

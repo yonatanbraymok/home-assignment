@@ -141,7 +141,10 @@ model JobApplication {
   proposals  StatusProposal[]
   actionLogs ActionLog[]
 
-  @@unique([userId, dedupeKey])
+  // Only one application per company + title (or job ID) can be waiting for a first reply.
+  // Once it has a reply, a new confirmation for the same title is a new application.
+  @@unique([userId, dedupeKey], map: "one_unanswered_per_dedupe_key", where: raw("status = 'APPLIED'"))
+  @@index([userId, dedupeKey])
   @@index([userId, status])
 }
 

@@ -2,13 +2,13 @@ import { z } from "zod";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { ApplicationStatus, EmailCategory } from "@/generated/prisma/enums";
 import { normalizeCompany } from "@/lib/agent/match";
+import { OPEN_STATUSES, STATUS_DESCRIPTION } from "@/lib/proposals/rules";
 
 // Read-only queries over one user's data. The only data access the chat agent has, and the same
 // functions the MCP server exposes. Every query is scoped to `userId`; nothing here can write.
 
 export type Reader = Pick<PrismaClient, "jobApplication" | "emailMessage" | "statusProposal" | "user">;
 
-const OPEN_STATUSES: ApplicationStatus[] = ["APPLIED", "ASSESSMENT", "INTERVIEW", "OFFER"];
 const DAY_MS = 86_400_000;
 const MAX_ROWS = 50;
 
@@ -56,6 +56,7 @@ export const READ_TOOLS = {
           role: a.roleTitle,
           job_id: a.jobRef,
           status: a.status,
+          status_label: STATUS_DESCRIPTION[a.status],
           applied_on: day(a.appliedAt),
           status_changed_on: day(a.statusChangedAt),
           last_email_on: day(a.lastEmailAt),
@@ -85,7 +86,7 @@ export const READ_TOOLS = {
         }),
       ]);
       return {
-        application: { company: a.company, role: a.roleTitle, job_id: a.jobRef, status: a.status, applied_on: day(a.appliedAt), source: a.source },
+        application: { company: a.company, role: a.roleTitle, job_id: a.jobRef, status: a.status, status_label: STATUS_DESCRIPTION[a.status], applied_on: day(a.appliedAt), source: a.source },
         emails: emails.map((e) => ({
           date: day(e.receivedAt),
           from: e.fromAddress,

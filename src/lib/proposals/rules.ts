@@ -31,6 +31,19 @@ export function capConfidence(value: Confidence, cap: Confidence): Confidence {
   return RANK[value] <= RANK[cap] ? value : cap;
 }
 
+/** How a status is described to the user in chat and /status. */
+export const STATUS_DESCRIPTION: Record<ApplicationStatus, string> = {
+  APPLIED: "waiting for a reply",
+  ASSESSMENT: "online test / assignment",
+  INTERVIEW: "interviewing",
+  OFFER: "offer",
+  REJECTED: "rejected",
+  WITHDRAWN: "withdrawn",
+};
+
+export const OPEN_STATUSES: ApplicationStatus[] = ["APPLIED", "ASSESSMENT", "INTERVIEW", "OFFER"];
+export const CLOSED_STATUSES: ApplicationStatus[] = ["REJECTED", "WITHDRAWN"];
+
 export const STATUS_LABEL: Record<ApplicationStatus, string> = {
   APPLIED: "Applied",
   ASSESSMENT: "Assessment",

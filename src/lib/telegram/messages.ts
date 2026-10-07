@@ -1,6 +1,8 @@
 import type { AnalysisSummary } from "@/lib/agent/analyze";
 import type { SyncSummary } from "@/lib/gmail/sync";
 import type { Decision } from "@/lib/proposals/decide";
+import { CLOSED_STATUSES, OPEN_STATUSES, STATUS_DESCRIPTION } from "@/lib/proposals/rules";
+import type { ApplicationStatus } from "@/generated/prisma/enums";
 import { COMMANDS } from "./commands";
 
 export function welcomeText(firstName: string, isNew: boolean, gmailAddress: string | null) {
@@ -74,9 +76,8 @@ export const DECISION_TOAST: Record<Decision["kind"], string> = {
 
 export type StatsForText = {
   total: number;
-  by_status: Partial<Record<string, number>>;
+  by_status: Partial<Record<ApplicationStatus, number>>;
   open: number;
-  no_reply_yet: number;
   proposals_waiting_for_decision: number;
   coverage: { gmail: string | null; emails_since: string | null; last_gmail_check: string | null };
 };
@@ -84,13 +85,19 @@ export type StatsForText = {
 /** /status: straight from the database, no AI, so it works even when the AI budget is used up. */
 export function statusText(s: StatsForText): string {
   if (!s.coverage.gmail) return "Gmail isn't connected yet. Send /connect to start.";
-  const order = ["APPLIED", "ASSESSMENT", "INTERVIEW", "OFFER", "REJECTED", "WITHDRAWN"];
-  const parts = order.filter((k) => s.by_status[k]).map((k) => `${s.by_status[k]} ${k.toLowerCase()}`);
+  // Open and closed are the two groups; each status belongs to exactly one.
+  const group = (statuses: ApplicationStatus[]) =>
+    statuses.filter((k) => s.by_status[k]).map((k) => `  • ${STATUS_DESCRIPTION[k][0].toUpperCase()}${STATUS_DESCRIPTION[k].slice(1)}: ${s.by_status[k]}`);
+  const closed = s.total - s.open;
   return [
-    `Tracking ${s.total} application${s.total === 1 ? "" : "s"}${parts.length ? `: ${parts.join(", ")}` : ""}.`,
-    `• Still open: ${s.open}`,
-    `• No reply yet: ${s.no_reply_yet}`,
-    `• Waiting for your decision: ${s.proposals_waiting_for_decision}${s.proposals_waiting_for_decision ? " (/pending)" : ""}`,
+    `Tracking ${s.total} application${s.total === 1 ? "" : "s"}.`,
+    "",
+    `Open: ${s.open}`,
+    ...group(OPEN_STATUSES),
+    `Closed: ${closed}`,
+    ...group(CLOSED_STATUSES),
+    "",
+    `Waiting for your decision: ${s.proposals_waiting_for_decision}${s.proposals_waiting_for_decision ? " (/pending)" : ""}`,
     "",
     `From ${s.coverage.gmail}${s.coverage.emails_since ? ` since ${s.coverage.emails_since}` : ""}. Ask me anything about them, e.g. "which applications haven't replied?"`,
   ].join("\n");

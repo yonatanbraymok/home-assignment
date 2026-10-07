@@ -15,7 +15,7 @@ export type MatchableApplication = {
 };
 
 export type MatchResult<A extends MatchableApplication = MatchableApplication> =
-  | { kind: "matched"; application: A; strength: "strong" | "weak"; warnings: string[] }
+  | { kind: "matched"; application: A; strength: "strong" | "weak"; byJobRef?: boolean; warnings: string[] }
   | { kind: "ambiguous"; candidates: A[]; warnings: string[] }
   | { kind: "none"; warnings: string[] };
 
@@ -48,7 +48,7 @@ export function matchApplication<A extends MatchableApplication>(extracted: Extr
   if (extracted.jobRef) {
     const ref = normalizeJobRef(extracted.jobRef);
     const exact = atCompany.find((c) => c.app.jobRef && normalizeJobRef(c.app.jobRef) === ref);
-    if (exact) return { kind: "matched", application: exact.app, strength: "strong", warnings: [] };
+    if (exact) return { kind: "matched", application: exact.app, strength: "strong", byJobRef: true, warnings: [] };
     pool = atCompany.filter((c) => !c.app.jobRef);
     if (pool.length === 0) {
       return { kind: "none", warnings: [`Different job ID from what you track: ${atCompany.map((c) => label(c.app)).join(", ")}`] };

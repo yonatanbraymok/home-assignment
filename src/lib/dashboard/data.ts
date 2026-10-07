@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { cache } from "react";
 import { sessionUserId } from "@/lib/auth/session";
-import { budgetStatus } from "@/lib/llm/budget";
+import { db } from "@/lib/db";
+import { budgetStatus, spendByPurpose, spendByUser, userCapUsd } from "@/lib/llm/budget";
+import { breakdownOf, forecastUsd, questionReserveUsd, scopeStatus } from "@/lib/llm/budget-policy";
+import { defaultModel } from "@/lib/llm/models";
 import { mcpTokenStatus } from "@/lib/mcp/auth";
 import { accountCountsFor, applicationDetailFor, findSessionUser, gettingStartedFor, overviewFor } from "./queries";
 
@@ -17,6 +20,7 @@ export type CurrentUser = {
   gmailConnectedAt: Date | null;
   gmailLastSyncAt: Date | null;
   gmailSyncError: string | null; // set while Google refuses access (revoked or expired)
+  isAdmin: boolean; // ADMIN_TELEGRAM_USER_ID: sees the service-wide budget
 };
 
 /**
@@ -38,6 +42,7 @@ export const getSignedInUser = cache(async (): Promise<CurrentUser | null> => {
     gmailConnectedAt: user.gmailConnectedAt,
     gmailLastSyncAt: user.gmailLastSyncAt,
     gmailSyncError: user.gmailSyncError,
+    isAdmin: String(user.telegramUserId) === process.env.ADMIN_TELEGRAM_USER_ID?.trim(),
   };
 });
 
@@ -71,6 +76,33 @@ export async function getDevelopers() {
 
 export async function getSettings() {
   const user = await getCurrentUser();
-  const [counts, budget] = await Promise.all([accountCountsFor(user.id), getBudget()]);
-  return { user, counts, budget };
+  const [counts, budget, mine] = await Promise.all([accountCountsFor(user.id), getBudget(), spendByPurpose(user.id)]);
+  const now = new Date();
+  return {
+    user,
+    counts,
+    budget,
+    breakdown: breakdownOf(mine),
+    forecastUsd: forecastUsd(budget.user?.spentUsd ?? 0, now),
+    admin: user.isAdmin ? await adminOverview(now, budget.service.spentUsd) : null,
+  };
+}
+
+/** The whole service this month, for the admin only: totals by purpose and each user's spend. */
+async function adminOverview(now: Date, serviceSpentUsd: number) {
+  const [byPurpose, perUser] = await Promise.all([spendByPurpose(null, now), spendByUser(now)]);
+  const users = await db.user.findMany({
+    where: { id: { in: [...perUser.keys()] } },
+    select: { id: true, displayName: true, telegramUsername: true },
+  });
+  const reserve = questionReserveUsd(defaultModel());
+  const cap = userCapUsd();
+  return {
+    breakdown: breakdownOf(byPurpose),
+    users: users
+      .map((u) => ({ name: u.displayName || (u.telegramUsername ? `@${u.telegramUsername}` : u.id), status: scopeStatus("user", perUser.get(u.id) ?? 0, cap, reserve) }))
+      .sort((a, b) => b.status.spentUsd - a.status.spentUsd),
+    // Evals, and the cost rows of accounts deleted with /delete_my_data (kept without a user).
+    unattributedUsd: Math.max(0, serviceSpentUsd - [...perUser.values()].reduce((sum, usd) => sum + usd, 0)),
+  };
 }

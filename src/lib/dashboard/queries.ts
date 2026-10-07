@@ -28,6 +28,7 @@ export function findSessionUser(userId: string) {
       gmailConnectedAt: true,
       gmailLastSyncAt: true,
       gmailSyncError: true,
+      telegramUserId: true,
     },
   });
 }

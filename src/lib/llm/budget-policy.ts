@@ -109,6 +109,33 @@ export function budgetMode(opts: {
   };
 }
 
+// ---------- Where the money goes, and where it's heading ----------
+
+export type SpendBreakdown = { emails: number; chat: number; briefs: number; other: number };
+
+/** Groups spend by what it paid for (LlmUsage purposes). Evals count as "other". */
+export function breakdownOf(byPurpose: Partial<Record<string, number>>): SpendBreakdown {
+  return {
+    emails: byPurpose.CLASSIFY_EMAIL ?? 0,
+    chat: byPurpose.CHAT ?? 0,
+    briefs: byPurpose.MCP_BRIEF ?? 0,
+    other: byPurpose.EVAL ?? 0,
+  };
+}
+
+const MIN_DAYS_FOR_FORECAST = 3;
+
+/**
+ * Month-end spend at the current pace, or null in the first days of a month, when a straight-line
+ * projection from a day or two of usage would mostly be noise.
+ */
+export function forecastUsd(spentUsd: number, now: Date): number | null {
+  const { start, end } = monthWindow(now);
+  const elapsedDays = (now.getTime() - start.getTime()) / 86_400_000;
+  if (elapsedDays < MIN_DAYS_FOR_FORECAST) return null;
+  return spentUsd * ((end.getTime() - start.getTime()) / (now.getTime() - start.getTime()));
+}
+
 // ---------- Threshold notices ----------
 
 export type NoticePct = 50 | 80 | 100;

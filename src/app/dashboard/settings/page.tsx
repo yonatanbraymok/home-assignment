@@ -7,7 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { APP_NAME } from "@/lib/brand";
 import { getSettings, type CurrentUser } from "@/lib/dashboard/data";
 import { formatDateTime, formatDay } from "@/lib/format";
-import { resetDateText, type ScopeStatus } from "@/lib/llm/budget-policy";
+import { resetDateText, type ScopeStatus, type SpendBreakdown } from "@/lib/llm/budget-policy";
 
 export const metadata = { title: `Settings · ${APP_NAME}` };
 
@@ -22,7 +22,7 @@ export default function SettingsPage() {
 }
 
 async function Settings() {
-  const { user, counts, budget } = await getSettings();
+  const { user, counts, budget, breakdown, forecastUsd, admin } = await getSettings();
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-xl font-semibold">Settings</h1>
@@ -62,6 +62,12 @@ async function Settings() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <BudgetRow label="Your allowance" status={budget.user!} />
+          <Breakdown breakdown={breakdown} />
+          <p className="text-sm text-muted-foreground">
+            {forecastUsd === null
+              ? "A forecast appears after the first few days of the month."
+              : `At this pace: about $${forecastUsd.toFixed(2)} by the end of the month, of your $${budget.user!.capUsd.toFixed(2)}.`}
+          </p>
           <BudgetRow label="Shared by all users" status={budget.service} />
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             <li>
@@ -77,6 +83,34 @@ async function Settings() {
           </ul>
         </CardContent>
       </Card>
+
+      {admin && (
+        <Card id="admin">
+          <CardHeader>
+            <CardTitle>Admin: AI spend this month</CardTitle>
+            <CardDescription>Visible only to you (ADMIN_TELEGRAM_USER_ID). The whole service, by purpose and by person.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <Breakdown breakdown={admin.breakdown} />
+            {admin.users.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No one has used AI this month.</p>
+            ) : (
+              <ul className="flex flex-col gap-3">
+                {admin.users.map((u) => (
+                  <li key={u.name}>
+                    <BudgetRow label={u.name} status={u.status} />
+                  </li>
+                ))}
+              </ul>
+            )}
+            {admin.unattributedUsd > 0 && (
+              <p className="text-xs text-muted-foreground">
+                ${admin.unattributedUsd.toFixed(2)} isn&apos;t tied to a user: evals, and accounts deleted with /delete_my_data.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -101,6 +135,25 @@ async function Settings() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function Breakdown({ breakdown }: { breakdown: SpendBreakdown }) {
+  const parts = [
+    ["Reading emails", breakdown.emails],
+    ["Questions in Telegram", breakdown.chat],
+    ["Briefs for other agents", breakdown.briefs],
+    ...(breakdown.other ? ([["Evals", breakdown.other]] as const) : []),
+  ] as const;
+  return (
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-4">
+      {parts.map(([label, usd]) => (
+        <div key={label} className="flex flex-col">
+          <dt className="text-xs text-muted-foreground">{label}</dt>
+          <dd className="font-medium tabular-nums">${usd.toFixed(usd > 0 && usd < 0.01 ? 4 : 2)}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

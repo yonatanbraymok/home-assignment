@@ -42,6 +42,17 @@ export async function spendUsd(userId: string | null, now = new Date()): Promise
   return Number(_sum.costUsd ?? 0);
 }
 
+/** This month's spend by purpose: one user's, or the whole service's (null). */
+export async function spendByPurpose(userId: string | null, now = new Date()): Promise<Record<string, number>> {
+  const { start, end } = monthWindow(now);
+  const rows = await db.llmUsage.groupBy({
+    by: ["purpose"],
+    where: { createdAt: { gte: start, lt: end }, ...(userId ? { userId } : {}) },
+    _sum: { costUsd: true },
+  });
+  return Object.fromEntries(rows.map((r) => [r.purpose, Number(r._sum.costUsd ?? 0)]));
+}
+
 /** This month's spend of every user who spent anything. */
 export async function spendByUser(now = new Date()): Promise<Map<string, number>> {
   const { start, end } = monthWindow(now);

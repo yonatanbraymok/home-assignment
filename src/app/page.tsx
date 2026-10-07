@@ -46,6 +46,15 @@ export default function Home(props: PageProps<"/">) {
           </Button>
         </CardFooter>
       </Card>
+      <p className="text-xs text-muted-foreground">
+        <Link className="underline" href="/privacy">
+          Privacy
+        </Link>{" "}
+        ·{" "}
+        <Link className="underline" href="/terms">
+          Terms
+        </Link>
+      </p>
     </main>
   );
 }

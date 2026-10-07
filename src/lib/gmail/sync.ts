@@ -14,8 +14,9 @@ const LIST_CAP = 5000;
 // Full messages fetched per user per run; a large backfill continues on the next runs.
 const FETCH_PER_RUN = 100;
 const FETCH_CONCURRENCY = 10;
-// Gmail search: skip what can't be an application update.
-const BASE_QUERY = "-in:sent -in:drafts -in:chats -category:promotions -category:social";
+// Gmail search: skip what can't be an application update. Sent mail is filtered in the prefilter
+// instead of here: "-in:sent" would also drop mail you send to yourself.
+const BASE_QUERY = "-in:drafts -in:chats -category:promotions -category:social";
 
 export const REVOKED_MESSAGE = "Gmail access expired or was revoked. Send /connect to reconnect.";
 

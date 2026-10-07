@@ -13,6 +13,7 @@ export type ParsedEmail = {
   snippet: string;
   bodyText: string;
   headers: Record<string, string>; // lower-cased names; used by the prefilter, not stored
+  labelIds: string[];
 };
 
 export function parseMessage(msg: gmail_v1.Schema$Message): ParsedEmail {
@@ -35,6 +36,7 @@ export function parseMessage(msg: gmail_v1.Schema$Message): ParsedEmail {
     snippet: decodeEntities(msg.snippet ?? ""),
     bodyText: stripQuotedHistory(raw).slice(0, BODY_CHAR_LIMIT),
     headers,
+    labelIds: msg.labelIds ?? [],
   };
 }
 

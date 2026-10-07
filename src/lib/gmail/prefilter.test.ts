@@ -14,6 +14,7 @@ function email(overrides: Partial<ParsedEmail>): ParsedEmail {
     snippet: "",
     bodyText: "",
     headers: {},
+    labelIds: ["INBOX"],
     ...overrides,
   };
 }
@@ -58,4 +59,10 @@ test("job-alert bulk mail is skipped unless the subject is clearly about an appl
 test("unrelated mail is skipped, and 'internal' does not count as 'intern'", () => {
   assert.equal(prefilter(email({ subject: "Your bank statement", bodyText: "Your internal account summary is ready." })).candidate, false);
   assert.equal(prefilter(email({ subject: "Dinner?", bodyText: "Unfortunately I can't make it." })).reason, "body-weak:unfortunately");
+});
+
+test("outgoing mail is skipped, but mail sent to yourself is kept", () => {
+  const body = { subject: "Your application to Wix", bodyText: "Unfortunately we decided to move forward with other candidates." };
+  assert.deepEqual(prefilter(email({ ...body, labelIds: ["SENT"] })), { candidate: false, reason: "outgoing" });
+  assert.equal(prefilter(email({ ...body, labelIds: ["SENT", "INBOX", "UNREAD"] })).candidate, true);
 });

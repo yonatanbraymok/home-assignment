@@ -37,6 +37,10 @@ const BODY_TERMS = [
 export type PrefilterResult = { candidate: boolean; reason: string };
 
 export function prefilter(email: ParsedEmail, trackedDomains: string[] = []): PrefilterResult {
+  // Mail you sent to someone else. Mail you sent to yourself has INBOX too and is kept,
+  // so testers can email themselves a mock rejection.
+  if (email.labelIds.includes("SENT") && !email.labelIds.includes("INBOX")) return { candidate: false, reason: "outgoing" };
+
   const domain = senderDomain(email.fromAddress);
   const fromDomain = (d: string) => domain === d || domain.endsWith(`.${d}`);
 

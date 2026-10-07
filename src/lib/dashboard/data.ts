@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { cache } from "react";
 import { sessionUserId } from "@/lib/auth/session";
 import { budgetStatus } from "@/lib/llm/budget";
+import { mcpTokenStatus } from "@/lib/mcp/auth";
 import { accountCountsFor, applicationDetailFor, findSessionUser, overviewFor } from "./queries";
 
 // The dashboard's data access layer. Pages get data only through these functions, and each one
@@ -64,6 +65,6 @@ export async function getApplicationDetail(applicationId: string) {
 
 export async function getSettings() {
   const user = await getCurrentUser();
-  const [counts, budget] = await Promise.all([accountCountsFor(user.id), getBudget()]);
-  return { user, counts, budget };
+  const [counts, budget, mcp] = await Promise.all([accountCountsFor(user.id), getBudget(), mcpTokenStatus(user.id)]);
+  return { user, counts, budget, mcp };
 }

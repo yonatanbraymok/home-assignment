@@ -89,12 +89,15 @@ enum ActionType {
   GMAIL_DISCONNECTED // the user revoked Gmail access with /disconnect
   ACCOUNT_DELETED // anonymous record that a /delete_my_data happened (no user id, counts only)
   DASHBOARD_LOGIN // a /dashboard sign-in link was used; its unique dedupeKey makes each link work once
+  MCP_TOKEN_CREATED // the owner created (or replaced) their MCP token in the dashboard
+  MCP_TOKEN_REVOKED
 }
 
 enum LlmPurpose {
   CLASSIFY_EMAIL
   CHAT
   EVAL
+  MCP_BRIEF // an interview brief requested by another agent over MCP
 }
 
 // ---------- Models ----------

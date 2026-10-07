@@ -30,7 +30,7 @@ enum EmailState {
   PREFILTERED_OUT // dropped by the free heuristic filter, no LLM call
   CLASSIFIED // LLM ran and passed validation
   FAILED // LLM/validation failed; retried on the next sync
-  DEFERRED_BUDGET // skipped because the budget hard cap was reached
+  DEFERRED_BUDGET // legacy, no longer written: the budget now leaves emails NEW until the reset
 }
 
 enum EmailCategory {
@@ -236,7 +236,7 @@ model ActionLog {
   proposalId    String?
   applicationId String?
   payload       Json?
-  dedupeKey     String?    @unique // one-time events, e.g. "budget:2026-10:80"
+  dedupeKey     String?    @unique // one-time events, e.g. "budget:user:2026-10:80:<userId>"
   createdAt     DateTime   @default(now())
 
   user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -246,7 +246,7 @@ model ActionLog {
   @@index([userId, id])
 }
 
-// One row per Gemini call; the budget guard sums costUsd for the current month.
+// One row per Gemini call; the budget guard sums costUsd for the current month, per person and in total.
 model LlmUsage {
   id           BigInt     @id @default(autoincrement())
   userId       String?
@@ -260,4 +260,5 @@ model LlmUsage {
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
+  @@index([userId, createdAt]) // each person's monthly allowance
 }

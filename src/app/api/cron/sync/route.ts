@@ -5,6 +5,7 @@ import { syncAllMailboxes } from "@/lib/gmail/sync";
 import { quietly } from "@/lib/proposals/cards-io";
 import { expireOverdueProposals } from "@/lib/proposals/expire";
 import { finishBackfill } from "@/lib/proposals/review";
+import { ensureBudgetNotices } from "@/lib/telegram/budget-notices";
 
 export const maxDuration = 60;
 
@@ -34,5 +35,7 @@ export async function POST(req: Request) {
       analyzed.push({ userId, error: "analysis failed (see server log)" });
     }
   }
+  // Every user's budget notices, including the shared ones (evals spend without a user).
+  await quietly("budget notices", ensureBudgetNotices());
   return Response.json({ ok: true, expired, synced, analyzed });
 }

@@ -38,6 +38,7 @@ The brief allows one question; everything else is an assumption, written down he
 | A14 | Two data rights, each confirmed with a button that only the account owner can use and that expires after 10 minutes. `/disconnect` revokes Gmail access at Google and deletes the token but keeps the tracker. `/delete_my_data` erases applications, emails, cards, chat history, the audit trail and the registration. Cost rows stay without a user (they hold no content and keep the budget honest), and one anonymous "account deleted" record notes that it happened. Messages already in the Telegram chat stay, because bots can't delete their messages after 48 hours. | Testers and real users connect a real inbox; they need a way to stop and a way to leave that doesn't depend on me |
 | A15 | Emails from before Gmail was connected don't each push a card. The agent reads all of them first, sends one summary ("12 updates from 9 companies"), then shows one card at a time, grouped by company, with "⏭ Later" to move a card to the end. New emails still get a card right away. There is no "approve all": every card is still its own tap. | A 60-day backfill produced a wall of cards on the first sync (found by the user). Requirement 3 asks for approval of each specific action, so the fix is in delivery, not approval. Waiting until everything is read also turns a confirmation followed by a rejection into one card. |
 | A16 | The dashboard has no password: Telegram is the identity. `/dashboard` sends a link that signs you in once, within 10 minutes. The session cookie lasts 7 days (fixed) and holds the internal user id, so `/delete_my_data` ends it. There's no "log out of all devices" yet. The dashboard is read-only for now; approving stays in Telegram (A10). | Whoever controls the Telegram account can already approve cards, so a link from the bot doesn't lower the bar, and there are no passwords to store or reset. It works on localhost, unlike Telegram's login widget. On phones Telegram often opens links in its own browser, which may not keep the cookie, so `/dashboard` is the way back in. |
+| A17 | Each person has a $5 monthly AI allowance, and everyone shares a $25 cap (§7). Registration stays open: anyone can `/start` the bot | The brief's $50 for 5 people is $10 each, hosting included. Open registration lets reviewers try it without setup; the shared cap protects the total however many people join, and the per-person cap keeps one account from using everyone's budget. |
 | A12 | The chat answers only about tracked applications (emails in the connected inbox since the backfill start), and says so when asked about anything else | It can't know about applications that never produced an email there |
 
 ## 4. Stack and why
@@ -63,39 +64,66 @@ The brief allows one question; everything else is an assumption, written down he
 | 5. MCP | Read-only tools, per-user token, SELECT-only database role; see §8 |
 | 6. Budget | See §6–7 |
 
-## 6. Cost estimate
+## 6. Cost (measured)
 
-Prices: Gemini API pricing page, checked 2026-10-07. `gemini-3.5-flash-lite` costs $0.30 / 1M input tokens and $2.50 / 1M output tokens (thinking tokens are billed as output). `gemini-3.1-flash-lite` costs $0.25 / $1.50. The estimate uses the more expensive 3.5 model.
+Prices: Gemini API pricing page, checked 2026-10-07. `gemini-3.5-flash-lite` (the default) costs $0.30 per 1M input tokens and $2.50 per 1M output tokens; thinking tokens are billed as output. `gemini-3.1-flash-lite` costs $0.25 / $1.50.
 
-**Usage:** 5 users × 20 uses/working day × 22 working days = **2,200 interactions/month**. To be conservative, every interaction is counted as an LLM chat question, even though approvals and `/status` cost nothing.
+Measured from the `LlmUsage` table, which records the exact token counts the API reports for every call:
+- Reading one job email: 740 tokens in, 100 out, **$0.00047**.
+- One chat model call: $0.00051 on average, $0.0015 at most. A question takes 2–3 calls (the chat eval: 13 calls for 6 questions), so about **$0.0013** typical and **$0.0075** heavy.
 
-| Item | Assumption | Tokens/month | Cost/month |
+The brief allows under $50 a month for 5 people at 20 uses a day. Each account is one person, so that's **$10 per person per month for 600 uses** (20 × 30 days; the brief says working days, about 440, so 600 is the cautious figure).
+
+| Per person per month | Typical | Heavy |
+|---|---|---|
+| Chat, if all 600 uses are questions | $0.78 | $4.50 |
+| Reading job emails (6 a day typical, 60 heavy) | $0.09 | $0.85 |
+| First month only: reading 60 days of past email | $0.17 | $1.70 |
+| Hosting share (Vercel Hobby + Supabase Free; $4 if we ever move to Vercel Pro) | $0 | $4 |
+| **Total** | **≈ $1** | **≈ $7–11** |
+
+Typical use is about 10% of the $10. Only the combined extreme (every question heavy, a paid hosting plan, and the first month) could go over, which is why each person also has a hard cap (§7).
+
+Telegram Bot API, Gmail API and Google OAuth cost nothing. The ≤ $45 total in §7 assumes Supabase stays on the Free plan.
+
+## 7. Budget: two hard caps, and what happens near them
+
+**Two caps, both checked before every AI call.**
+- **Each person: $5 a month** (`LLM_USER_MONTHLY_BUDGET_USD`). With up to $4 each for hosting, that stays under the $10 per person.
+- **Shared: $25 a month** (`LLM_MONTHLY_BUDGET_USD`) for everyone, evals included. With hosting at most $20, the total stays under $45 whatever the usage or the number of users.
+- A month is the UTC calendar month; budgets reset at 02:00–03:00 Israel time on the 1st.
+
+**Levels, for each cap.** The worse of the two applies.
+- **ok** below 80%.
+- **low** from 80%.
+- **used up** once one more whole question might not fit: spend + $0.045 (the worst case of a question: 6 calls at 8k tokens in and 2,048 out) > cap. Spend never actually reaches 100%, because a call only runs if its worst case fits; this rule makes chat and email reading stop at the same moment, and a question is never cut off halfway. Up to about 1% of an allowance stays unused.
+
+| Budget | At | Who is told (once a month) | Until the 1st |
 |---|---|---|---|
-| Chat Q&A | 2,200 × (2 model calls: ~5,500 input + ~1,000 output tokens incl. thinking) | 12.1M in / 2.2M out | $3.63 + $5.50 = **$9.13** |
-| Email classification | Free prefilter leaves ~6 candidate emails/user/day → 5 × 6 × 30 = 900 calls × (2,500 in + 500 out) | 2.25M in / 0.45M out | $0.68 + $1.13 = **$1.80** |
-| Evals | ~200 model calls/month | — | **~$0.60** |
-| Vercel Hobby | | | $0 |
-| Supabase Free | | | $0 |
-| Telegram Bot API, Gmail API, Google OAuth | | | $0 |
-| **Steady state** | | | **≈ $11.50** |
-| One-time backfill (first month) | 60 days × 6/day × 5 users = 1,800 calls × $0.002 | | +$3.60 → **≈ $15** |
-| Stress case: prefilter lets all ~60 emails/user/day through | +8,100 calls × $0.002 | | **≈ $28** |
+| Shared | 50% | the admin | nothing changes |
+| A person's | 80% | that person | up to 20 questions a day (instead of 40); emails are read with the lighter model |
+| Shared | 80% | the admin and every user | the same, for everyone |
+| A person's | used up | that person | no questions, no new emails read; emails wait unread and are read after the reset |
+| Shared | used up | the admin and every user | the same, for everyone |
 
-Upgrade path: moving to Vercel Pro (+$20/mo, for commercial use and per-minute cron) gives ≈ $32 steady state. The stress case would then reach ≈ $48, which is why the hard cap below exists.
+`/status`, `/pending`, approving cards and the dashboard never need the AI, so they keep working at every level.
 
-<!-- TODO(me): replace estimates with measured averages from LlmUsage after the first real runs. -->
+**The lighter model must pass the same evals.** `gemini-3.1-flash-lite` passed the classifier eval (24/24) but not the chat eval (11/12: once it gave a count without naming its source). So only email reading switches; chat keeps the default model and is limited to 20 questions a day instead.
 
-## 7. What happens near the limit
+**Dropped from the first plan: "pause backfills at 80%".** Reading past emails after newer ones the user may already have approved produces wrong cards (a bogus "new application" or "which application?"). Reading 60 days of past email costs at most $0.17–$1.70 per person, and the caps already bound it.
 
-The LLM hard cap is **$25/month**. Hosting is at most $20 even after an upgrade, so total spend stays ≤ $45 by construction, whatever the usage. Before every model call the code checks *month-to-date spend + worst-case cost of this call* against the cap. After the call it records the exact token counts the API reports.
+**Never over budget silently.**
+- A Telegram message at each threshold.
+- Every refused question and every `/sync` says whose budget, and until when.
+- `/status` shows this month's spend.
+- The dashboard header shows your allowance; Settings shows both budgets.
+- `/api/health` reports the shared level, without amounts.
 
-| Spend | What the agent does |
-|---|---|
-| 50% | Tells the admin in Telegram |
-| 80% | Tells every user once. Switches to the cheaper model, which must also pass the evals. Limits chat to 20 questions/user/day and pauses backfills. |
-| 100% | Stops calling the model. New emails are still fetched and queued (free). The bot says what's paused and until when. Dashboard, `/status`, MCP stats and approving existing proposals keep working because they don't need the model. |
-
-It never goes over silently: every threshold sends a message, and the dashboard shows a budget bar.
+**Known limits.**
+- Two calls running at the same moment can each pass the check, so a budget can go over by about one call's worst case each: cents.
+- Deleting your data and registering again starts a new allowance. The shared cap still bounds the total.
+- The costs are our own calculation from the token counts, not Google's bill: prices can change, Google's billing day follows Pacific time, and caching discounts make our figure slightly high (the safe side). As an outer safety net, set a $25 budget alert in Google Cloud Billing; it emails, but doesn't stop spending.
+- After a pause, the emails that waited are read from the 1st, 10 per person per sync run, so their cards trickle in.
 
 ## 8. MCP: who can trigger the action
 
@@ -120,7 +148,7 @@ How it's enforced: (1) no write tools exist on the server; (2) tool handlers use
 | 5d. Test round (2026-10-07) | Added two evals that call the real model: the classifier (12 known-answer emails incl. traps and a prompt injection) and the chat (seeded data: counts, "don't know", refusal, planted instruction). Stress-tested two analyses at once, the hard budget cap and the cron endpoint. | The evals found two real chat bugs and the stress tests found two more (see the AI log). All four are fixed and covered by tests. |
 | 5e. Open email + data rights (2026-10-07) | The user reported that "Open email" landed on Gmail's "Temporary Error (404)". Three link formats were tested on a real email; `?authuser=<email>#all/<messageId>` works. Added `/disconnect` and `/delete_my_data` with owner-only, expiring confirmations. 56 unit tests; `npm run eval:account` (owner/expiry checks, disconnect keeps the tracker, delete removes every row of that user and nothing of another). | A disconnected user keeps chat and `/status` over their tracker. The revoke is best effort: if Google can't confirm it, the user is told where to remove access by hand. |
 | 5f. First-sync review (2026-10-07) | The user found the first sync floods the chat with cards. Proposals from past emails are now held; one summary when all are read; one card at a time with "Later"; `/pending` resumes; expiry counts from when a card is shown; review cards are silent. Also fixed taps that waited behind a long `/sync` (see the AI log). 61 unit tests; `npm run eval:review` (6 checks). | Requirement 3 rules out "approve all", so the fix changes when cards arrive, not how they're approved. Live emails are never held: an interview invite shouldn't wait behind a review. |
-| 5g. Budget thresholds | **TODO** | |
+| 5g. Monthly budget (2026-10-07) | Measured the real cost per call (§6). Added a $5 allowance per person next to the $25 shared cap, with levels at 80% and "used up", once-a-month Telegram notices (50% to the admin), the budget in `/status`, the dashboard and the health check. The cheaper model was tested with our evals first; it's used for reading emails only. Planned with a code map by one AI agent and a design review by another, which found five flaws in my draft (see the AI log). 85 unit tests; `npm run eval:budget` (8 checks, $0). | The budget no longer changes an email's state: when it's used up, reading simply doesn't start, so nothing needs undoing. A question starts only if a whole one fits. |
 | 6a. Dashboard: sign-in + read-only views (2026-10-07) | `/dashboard` in the bot sends a single-use sign-in link (A16). Pages: overview (counts, the proposals waiting in Telegram, applications with a colour per stage), an application timeline (each email with the agent's reasoning, the verified quote, confidence and the owner's decision), settings (Gmail status, the AI budget explained), and an AI-budget bar in the header. Built with shadcn/ui (Radix, tested on a throwaway copy first). A five-angle review by independent AI reviewers, each finding checked by a skeptic, found 4 real bugs, all fixed (see the AI log). 70 unit tests; `npm run eval:dashboard` (5 checks, including HTTP against the running app); screenshots of every page from a headless browser with seeded demo data. | The dashboard can't approve anything: proposals show "Awaiting your approval in Telegram". The budget bar shows spend against the $25 AI cap the code enforces, not the $50 total, because the agent stops at $25. Dates shown are the emails' dates, not the day you tapped Approve. |
 | 6b. Dashboard edits | **TODO.** Before edits ship, a sign-in link should open a "Continue as @username" page instead of signing in directly; otherwise someone could send you a link to their account, and your edits would land in their tracker. | |
 | 7. MCP | **TODO** | |
@@ -145,6 +173,8 @@ I used Claude Code (Claude Opus) as a pair programmer for planning, scaffolding 
 
 | When | What the AI said or did | How I caught it | Fix |
 |---|---|---|---|
+| Phase 5g | My first budget design said "stop at 100%". But a call only runs if its worst case fits, so spend never reaches 100%: the "used up" notices would never fire, and chat and email reading would stop on different days | The AI design reviewer | "Used up" means one more whole question doesn't fit ($0.045 reserve) |
+| Phase 5g | Hitting the budget cap during a first sync marked the remaining past emails as deferred, and the past-email review counted them as read: the review summary went out early, and those emails later arrived as one-by-one cards | The AI agent mapping the budget code | One shared definition of "not read yet" (it includes the old deferred state); the budget no longer changes email states; covered by `eval:budget` |
 | Phase 6 | The "used" marker of a sign-in link was a hash of the link text, but the token parser ignored anything after a second dot. So `<link>.x`, `<link>.y`… each passed as a fresh link: a used link could sign in again for its 10 minutes, which broke the one-use rule | Two of the five AI reviewers, independently | Tokens must have exactly two parts; unit tests and an eval step try `.`, `.x` and `.a.b` |
 | Phase 6 | The home page looked up `?login=` messages with `in`, which also matches built-in keys: `/?login=toString` rendered a function and crashed the page | Three AI reviewers, independently | Own-key check (`Object.hasOwn`), unit-tested with `toString`, `constructor`, `__proto__`; same fix on the Gmail result page |
 | Phase 6 | The session check reads the clock (cookie expiry). Next 16 refuses that during the per-session prefetch render, which logged an error on every signed-in page. The production build passed, so only the dev log showed it | Reading the dev server log after the first eval | `await connection()` before the session read, as the bundled Next docs prescribe |
@@ -169,13 +199,15 @@ I used Claude Code (Claude Opus) as a pair programmer for planning, scaffolding 
 
 | Eval | What it proves | Command | Latest result |
 |---|---|---|---|
+| Monthly budget | Spend per person and in total within the UTC month; ok → low (lighter email model, 20 questions) → used up; each notice sent once, even by two runs at once; the per-call check refuses what doesn't fit; at "used up" no email is claimed or changed; the past-email review waits for deferred emails; chat refused up front (yours or shared) and limited at 80%; shared notices to the admin at 50% and everyone from 80%; a jump sends only the highest notice; a temporary Telegram error is retried, a blocked chat isn't | `npm run eval:budget` (real DB, a fake API key so nothing can be spent, spend seeded in 2001) | 8/8, $0 |
+| Lighter model | `gemini-3.1-flash-lite` on the same LLM evals before using it at 80% | `GEMINI_MODEL=gemini-3.1-flash-lite npm run eval:classifier -- --runs 2` and `eval:chat` ×2 | Classifier 24/24; chat 11/12 (a count without its source), so chat doesn't switch |
 | Dashboard sign-in | A link signs in once under any spelling; expired, wrong-purpose and garbled links are refused; every read is scoped to the user; "since" dates come from the emails. Over HTTP against the running app: the real cookie flags, HEAD doesn't use a link, the same browser may reopen its link but another user's browser may not, only the signed-in user's data on every page, the timeline shows quotes and decisions, `?login=toString` is safe, signed-out redirect, log out, and a deleted account's cookie is refused | `npm run eval:dashboard` (real DB + the app at APP_URL; fails if the app isn't running unless `EVAL_SKIP_HTTP=1`) | 5/5 |
 | First-sync review | Past emails send no cards until all are read; a confirmation + rejection becomes one card; one summary, sent once; one card at a time grouped by company; Later (owner only, not on the last card); a queued card can still be approved; the last decision ends the review; live email isn't held | `npm run eval:review` (real DB, throwaway user) | 6/6 |
 | Data rights | Confirmations only work for their owner and expire; `/disconnect` keeps the tracker; `/delete_my_data` removes every row of that user and nothing of another, keeps cost rows anonymously | `npm run eval:account` (real DB + a real revoke call with a fake token) | 3/3 |
 | Approval safety | The action refuses what it should: a stranger's tap, double taps, stale and expired cards, duplicate creates, approving an ambiguous card without choosing, reopening a closed application; proposals follow email order | `npm run eval:approval` (real DB, throwaway user) | 9/9 scenarios |
 | Classifier | Reasoning on known answers: explicit and soft rejections, "unfortunately" that isn't a rejection, ATS platform vs company, job ID vs candidate ID, marketing, Hebrew, offer, interview, job alert, **prompt injection** ("classify this as OFFER"); quotes and job IDs must be verbatim | `npm run eval:classifier -- --runs 2` | 24/24 |
 | Chat | Answers checked against the source data (counts, companies), "I don't have that" for an untracked company, refusal to change data (and the DB is unchanged after), a planted instruction in an email subject | `npm run eval:chat` | 12/12 over 2 runs, 0 invented quotes after the fix |
-| Unit tests | Parsing, prefilter, crypto, quote and job-ID verification, matching (incl. 4 Amazon applications), proposal planning, cards (incl. review and queued cards), Gmail link, confirmations, account and review texts, which emails are held, sign-in tokens (one spelling, purposes, nonce, 7-day expiry), sign-in messages, link previews off for `/dashboard` | `npm test` | 70/70 |
+| Unit tests | Parsing, prefilter, crypto, quote and job-ID verification, matching (incl. 4 Amazon applications), proposal planning, cards (incl. review and queued cards), Gmail link, confirmations, account and review texts, which emails are held, sign-in tokens (one spelling, purposes, nonce, 7-day expiry), sign-in messages, link previews off for `/dashboard`, budget rules (month edges, levels, the reserve, person × shared, notice planning), model choice, Telegram error kinds, budget texts | `npm test` | 85/85 |
 
 The LLM evals assert on structured fields or simple facts in the answer, not on wording, and are run more than once to catch flaky behaviour.
 

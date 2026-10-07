@@ -4,15 +4,18 @@ import { accountSummary, authorizeConfirmation, deleteAccount, disconnectGmail }
 import { loginLink } from "@/lib/auth/tokens";
 import { analyzePendingEmails } from "@/lib/agent/analyze";
 import { answerQuestion } from "@/lib/agent/chat";
+import { NOT_YET_READ } from "@/lib/agent/queue";
 import { signToken } from "@/lib/crypto";
 import { db } from "@/lib/db";
 import { appUrl, requireEnv } from "@/lib/env";
 import { GmailAccessRevoked, syncMailbox } from "@/lib/gmail/sync";
+import { budgetStatus } from "@/lib/llm/budget";
 import { quietly, refreshCard, renderCardById, sendCard } from "@/lib/proposals/cards-io";
 import { approveProposal, rejectProposal } from "@/lib/proposals/decide";
 import { START_REVIEW_DATA } from "@/lib/proposals/past-emails";
 import { continueReview, deferReviewCard, finishBackfill, showNextReviewCard } from "@/lib/proposals/review";
 import { READ_TOOLS } from "@/lib/tools/read";
+import { ensureBudgetNotices } from "./budget-notices";
 import {
   DECISION_TOAST,
   LATER_TOAST,
@@ -31,6 +34,7 @@ import {
   disconnectDoneText,
   helpText,
   statusText,
+  stillReadingText,
   syncText,
   welcomeText,
   type StatsForText,
@@ -204,9 +208,10 @@ function registerHandlers(bot: Bot) {
     }
     await ctx.replyWithChatAction("typing");
     const analysis = await analyzePendingEmails(user.id, ANALYZE_PER_SYNC);
-    const stillQueued = await db.emailMessage.count({ where: { userId: user.id, state: "NEW" } });
+    const stillQueued = await db.emailMessage.count({ where: { userId: user.id, state: { in: [...NOT_YET_READ] } } });
     await ctx.reply([fetched, analysisText(analysis, stillQueued)].filter(Boolean).join("\n\n"));
     await quietly("review summary", finishBackfill(user.id));
+    await quietly("budget notices", ensureBudgetNotices({ recipients: [user.id] }));
   });
 
   pm.command("pending", async (ctx) => {
@@ -222,7 +227,7 @@ function registerHandlers(bot: Bot) {
     for (const p of shown) await sendCard(p.id);
     const review = await showNextReviewCard(user.id);
     if (review.kind === "open" && !shown.some((p) => p.id === review.proposalId)) await sendCard(review.proposalId);
-    if (review.kind === "reading") return ctx.reply(STILL_READING_TEXT);
+    if (review.kind === "reading") return ctx.reply(stillReadingText(await budgetStatus(user.id)));
     if (!shown.length && review.kind === "done") return ctx.reply("Nothing is waiting for your decision.");
   });
 
@@ -248,8 +253,8 @@ function registerHandlers(bot: Bot) {
   pm.command("status", async (ctx) => {
     const user = await findUser(ctx.from.id);
     if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
-    const stats = (await READ_TOOLS.get_stats.run(db, user.id, {})) as StatsForText;
-    await ctx.reply(statusText(stats));
+    const [stats, budget] = await Promise.all([READ_TOOLS.get_stats.run(db, user.id, {}) as Promise<StatsForText>, budgetStatus(user.id)]);
+    await ctx.reply(statusText(stats, budget));
   });
 
   // Any other text is a question about the user's applications.
@@ -262,6 +267,8 @@ function registerHandlers(bot: Bot) {
     await ctx.replyWithChatAction("typing");
     const result = await answerQuestion(user.id, ctx.message.text);
     await ctx.reply(result.text, { link_preview_options: { is_disabled: true } });
+    // After the answer, so a "you've used 80%" notice never arrives before it.
+    await quietly("budget notices", ensureBudgetNotices({ recipients: [user.id] }));
   });
 
   pm.on("message", (ctx) => ctx.reply("I can only read text messages. Ask me about your applications, or send /help."));

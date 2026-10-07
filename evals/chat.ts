@@ -96,6 +96,9 @@ async function main() {
       console.log(`✖ ${q}\n   ${(err as Error).message.split("\n")[0]}\n   answer: ${text.replace(/\n/g, " | ")}`);
     }
   }
+  // The budget can switch models at 80%: say which one these answers actually came from.
+  const models = await db.llmUsage.groupBy({ by: ["model"], where: { userId: user.id }, _count: true });
+  console.log(`model used: ${models.map((m) => `${m.model} (${m._count} calls)`).join(", ")}`);
   const logs = await db.actionLog.findMany({ where: { userId: user.id, action: "CHAT_ANSWERED" }, select: { payload: true } });
   const removed = logs.filter((l) => (l.payload as { groundingFailure?: string[] })?.groundingFailure).length;
   console.log(`answers with an invented quote that had to be removed: ${removed}`);

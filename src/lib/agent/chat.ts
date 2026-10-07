@@ -1,13 +1,14 @@
 import type { Content } from "@google/genai";
 import { db } from "@/lib/db";
-import { BudgetExceeded } from "@/lib/llm/budget";
+import { BudgetExceeded, budgetStatus } from "@/lib/llm/budget";
+import type { BudgetMode } from "@/lib/llm/budget-policy";
 import { answerWithTools, llmConfigured } from "@/lib/llm/gemini";
+import { budgetPausedText, chatLimitText } from "@/lib/telegram/messages";
 import { readToolDeclarations, runReadTool } from "@/lib/tools/read";
 import { unverifiedQuotes } from "./verify-quote";
 
 // Answers a user's question about their applications, using only the read-only tools.
 
-const DAILY_QUESTION_LIMIT = 40; // twice the brief's 20 uses/day; protects the budget from one user
 const FOLLOW_UP_WINDOW_MS = 30 * 60_000;
 const FOLLOW_UP_TURNS = 3;
 const MAX_TOOL_ROUNDS = 4;
@@ -38,15 +39,18 @@ Rules:
 
 export type ChatResult = { kind: "answer" | "limit" | "budget" | "error"; text: string };
 
-export async function answerQuestion(userId: string, question: string): Promise<ChatResult> {
+export async function answerQuestion(userId: string, question: string, opts: { budget?: BudgetMode } = {}): Promise<ChatResult> {
   if (!llmConfigured()) return { kind: "error", text: "Questions aren't available right now (the AI model isn't configured)." };
+
+  // Checked up front, so a question starts only if a whole one fits: never paid for half an answer.
+  const mode = opts.budget ?? (await budgetStatus(userId));
+  if (!mode.aiOn) return { kind: "budget", text: budgetPausedText(mode.limitedBy ?? "service", mode.resetsOn) };
 
   const now = new Date();
   const dayAgo = new Date(now.getTime() - 24 * 3600_000);
   const askedToday = await db.actionLog.count({ where: { userId, action: "CHAT_ANSWERED", createdAt: { gte: dayAgo } } });
-  if (askedToday >= DAILY_QUESTION_LIMIT) {
-    return { kind: "limit", text: `You've asked ${DAILY_QUESTION_LIMIT} questions in the last 24 hours, which is the daily limit. /status still works.` };
-  }
+  // 40 a day, 20 once a budget is past 80% (budget-policy.ts).
+  if (askedToday >= mode.chatDailyLimit) return { kind: "limit", text: chatLimitText(mode) };
 
   const [user, oldest, recent] = await Promise.all([
     db.user.findUnique({ where: { id: userId }, select: { gmailAddress: true, gmailLastSyncAt: true } }),
@@ -82,6 +86,7 @@ export async function answerQuestion(userId: string, question: string): Promise<
     const { text, toolCalls, toolResults } = await answerWithTools({
       purpose: "CHAT",
       userId,
+      model: mode.models.chat, // one model for the whole question (thought signatures are per model)
       system,
       history,
       message: question,
@@ -112,9 +117,8 @@ export async function answerQuestion(userId: string, question: string): Promise<
     });
     return { kind: "answer", text: answer };
   } catch (err) {
-    if (err instanceof BudgetExceeded) {
-      return { kind: "budget", text: "The monthly AI budget is used up, so I can't answer questions until it resets. /status still works." };
-    }
+    // Another request spent the rest while this question was running.
+    if (err instanceof BudgetExceeded) return { kind: "budget", text: budgetPausedText(err.scope, err.resetsOn) };
     console.error("chat failed:", err instanceof Error ? err.message : err);
     return { kind: "error", text: "I couldn't answer just now. Please try again in a minute." };
   }

@@ -4,6 +4,7 @@ import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader,
 import { Progress } from "@/components/ui/progress";
 import { getSettings, type CurrentUser } from "@/lib/dashboard/data";
 import { formatDateTime, formatDay } from "@/lib/format";
+import { resetDateText, type ScopeStatus } from "@/lib/llm/budget-policy";
 
 export const metadata = { title: "Settings · Job Hunt Tracker" };
 
@@ -49,22 +50,28 @@ async function Settings() {
       <Card id="budget">
         <CardHeader>
           <CardTitle>AI budget</CardTitle>
-          <CardDescription>Shared by all users; resets on the 1st of each month (UTC).</CardDescription>
+          <CardDescription>Resets on {resetDateText(budget.resetsOn)} (the 1st of each month, UTC).</CardDescription>
+          {budget.level !== "ok" && (
+            <CardAction>
+              <Badge variant="destructive">{budget.level === "out" ? "Paused" : "Limited"}</Badge>
+            </CardAction>
+          )}
         </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <div className="flex justify-between text-sm">
-            <span>Used this month</span>
-            <span className="font-medium tabular-nums">
-              ${budget.spentUsd.toFixed(2)} of ${budget.capUsd.toFixed(2)} ({budget.percent.toFixed(1)}%)
-            </span>
-          </div>
-          <Progress value={budget.percent} aria-label="AI budget used this month" />
-          <p className="text-sm text-muted-foreground">
-            The whole service must cost under $50 a month. The AI is capped at ${budget.capUsd.toFixed(2)} and hosting at $20, so the total
-            stays under $50 whatever the usage. Before each AI call, the code checks that this call can&apos;t take the month past the cap.
-            At the cap it stops calling the AI and says so in Telegram; your tracker, /status, this dashboard and approving existing cards
-            keep working.
-          </p>
+        <CardContent className="flex flex-col gap-4">
+          <BudgetRow label="Your allowance" status={budget.user!} />
+          <BudgetRow label="Shared by all users" status={budget.service} />
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>
+              The service must cost under $50 a month for 5 people, about $10 each. Your AI allowance is ${budget.user!.capUsd.toFixed(2)}; with
+              at most $4 each for hosting, that stays under $10. A typical month uses about $1.
+            </li>
+            <li>From 80% of either budget: up to 20 questions a day{budget.lighterEmailModel ? " and a lighter model for reading emails" : ""}.</li>
+            <li>
+              Used up: no questions and no new emails read until the 1st; emails wait and are read then. Your tracker, /status, approving cards
+              and this dashboard keep working.
+            </li>
+            <li>Every AI call is checked against both budgets before it runs, and you get a message in Telegram at 80% and when it&apos;s used up.</li>
+          </ul>
         </CardContent>
       </Card>
 
@@ -78,6 +85,20 @@ async function Settings() {
           ends it everywhere. Send /dashboard to the bot for a new link.
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function BudgetRow({ label, status }: { label: string; status: ScopeStatus }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex justify-between text-sm">
+        <span>{label}</span>
+        <span className={status.level === "ok" ? "font-medium tabular-nums" : "font-medium text-destructive tabular-nums"}>
+          ${status.spentUsd.toFixed(2)} of ${status.capUsd.toFixed(2)} ({status.percent.toFixed(1)}%)
+        </span>
+      </div>
+      <Progress value={status.percent} aria-label={`${label}: ${status.percent.toFixed(1)}% used this month`} />
     </div>
   );
 }

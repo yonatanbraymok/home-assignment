@@ -18,7 +18,8 @@
     "eval:chat": "tsx --env-file=.env.local evals/chat.ts",
     "eval:account": "tsx --env-file=.env.local evals/account.ts",
     "eval:review": "tsx --env-file=.env.local evals/review.ts",
-    "eval:dashboard": "tsx --env-file=.env.local evals/dashboard.ts"
+    "eval:dashboard": "tsx --env-file=.env.local evals/dashboard.ts",
+    "eval:budget": "tsx --env-file=.env.local evals/budget.ts"
   },
   "dependencies": {
     "@google/genai": "^2.27.0",

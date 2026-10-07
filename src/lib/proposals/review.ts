@@ -1,5 +1,6 @@
 import { InlineKeyboard } from "grammy";
 import { db } from "@/lib/db";
+import { NOT_YET_READ } from "@/lib/agent/queue";
 import { REVIEW_DONE_TEXT, reviewReadyText } from "@/lib/telegram/messages";
 import { sendToUser, telegramApi } from "@/lib/telegram/notify";
 import { quietly, sendCard } from "./cards-io";
@@ -29,7 +30,8 @@ export async function finishBackfill(userId: string): Promise<ReviewSummary | nu
   // gmailLastSyncAt moves only when everything listed was fetched, so this means "all fetched".
   if (!user.gmailLastSyncAt || user.gmailLastSyncAt < user.gmailConnectedAt) return null;
   const unread = await db.emailMessage.count({
-    where: { userId, state: { in: ["NEW", "ANALYZING"] }, receivedAt: { lt: user.gmailConnectedAt } },
+    // NOT_YET_READ includes legacy DEFERRED_BUDGET: counting those as read sent the review early.
+    where: { userId, state: { in: [...NOT_YET_READ] }, receivedAt: { lt: user.gmailConnectedAt } },
   });
   if (unread > 0) return null;
 

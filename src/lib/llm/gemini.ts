@@ -12,14 +12,14 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireEnv } from "@/lib/env";
 import type { LlmPurpose } from "@/generated/prisma/client";
-import { assertWithinBudget } from "./budget";
+import { assertAffordable } from "./budget";
+import { estimateCallWorstCaseUsd } from "./budget-policy";
+import { defaultModel } from "./models";
 import { costUsd } from "./pricing";
 
 // The only module that calls Gemini: every call is budget-checked first and recorded in LlmUsage after.
 
-const DEFAULT_MODEL = "gemini-3.5-flash-lite";
-// Conservative chars-per-token for the pre-call budget estimate (Hebrew tokenizes denser than English).
-const CHARS_PER_TOKEN_ESTIMATE = 2;
+export { defaultModel };
 
 /** The model answered, but not with valid JSON for the schema. The call was still paid for and recorded. */
 export class LlmOutputError extends Error {}
@@ -31,10 +31,6 @@ export function llmConfigured(): boolean {
   return Boolean(process.env.GEMINI_API_KEY);
 }
 
-export function defaultModel(): string {
-  return process.env.GEMINI_MODEL || DEFAULT_MODEL;
-}
-
 /** One budget-checked, recorded call. */
 async function call(opts: {
   purpose: LlmPurpose;
@@ -43,9 +39,12 @@ async function call(opts: {
   contents: Content[] | string;
   config: GenerateContentConfig;
 }): Promise<GenerateContentResponse> {
-  const promptChars = String(opts.config.systemInstruction ?? "").length + JSON.stringify(opts.contents).length;
-  const maxOutput = opts.config.maxOutputTokens ?? 2048;
-  await assertWithinBudget(costUsd(opts.model, Math.ceil(promptChars / CHARS_PER_TOKEN_ESTIMATE), maxOutput));
+  // The tool declarations are sent with every chat round, so they count too.
+  const promptChars =
+    String(opts.config.systemInstruction ?? "").length + JSON.stringify(opts.contents).length + JSON.stringify(opts.config.tools ?? []).length;
+  const worstCaseUsd = estimateCallWorstCaseUsd(opts.model, promptChars, opts.config.maxOutputTokens ?? 2048);
+  // Both the user's allowance and the shared budget (budget.ts).
+  await assertAffordable({ userId: opts.userId, worstCaseUsd });
 
   const response = await withOneRetry(() =>
     genai().models.generateContent({

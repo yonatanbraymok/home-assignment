@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { cache } from "react";
 import { sessionUserId } from "@/lib/auth/session";
-import { monthToDateSpendUsd, monthlyBudgetUsd } from "@/lib/llm/budget";
+import { budgetStatus } from "@/lib/llm/budget";
 import { accountCountsFor, applicationDetailFor, findSessionUser, overviewFor } from "./queries";
 
 // The dashboard's data access layer. Pages get data only through these functions, and each one
@@ -47,15 +47,8 @@ export async function getCurrentUser(): Promise<CurrentUser> {
   return user;
 }
 
-/**
- * This month's AI spend for everyone against the hard cap the code enforces (llm/budget.ts).
- * Not per-user data, but still only for signed-in users.
- */
-export const getBudget = cache(async () => {
-  await getCurrentUser();
-  const [spentUsd, capUsd] = [await monthToDateSpendUsd(), monthlyBudgetUsd()];
-  return { spentUsd, capUsd, percent: Math.min(100, (spentUsd / capUsd) * 100) };
-});
+/** The signed-in user's AI allowance this month, the shared budget, and what's limited (llm/budget.ts). */
+export const getBudget = cache(async () => budgetStatus((await getCurrentUser()).id));
 
 export async function getOverview() {
   const user = await getCurrentUser();

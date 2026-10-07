@@ -2,6 +2,15 @@ import type { AccountSummary } from "@/lib/account/manage";
 import type { AnalysisSummary } from "@/lib/agent/analyze";
 import type { RevokeResult } from "@/lib/gmail/oauth";
 import type { SyncSummary } from "@/lib/gmail/sync";
+import {
+  CHAT_DAILY_LIMIT_LOW,
+  monthName,
+  resetDateText,
+  type BudgetMode,
+  type BudgetScope,
+  type NoticeKind,
+  type ScopeStatus,
+} from "@/lib/llm/budget-policy";
 import type { Decision } from "@/lib/proposals/decide";
 import type { ReviewSummary } from "@/lib/proposals/past-emails";
 import type { DeferResult } from "@/lib/proposals/review";
@@ -10,6 +19,7 @@ import type { ApplicationStatus } from "@/generated/prisma/enums";
 import { COMMANDS } from "./commands";
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 export function welcomeText(firstName: string, isNew: boolean, gmailAddress: string | null) {
   return [
@@ -62,7 +72,7 @@ export function syncText({ fetched, candidates, skipped, remaining }: SyncSummar
 
 export function analysisText(s: AnalysisSummary, stillQueued: number): string {
   if (s.skippedNotConfigured) return "Email analysis isn't configured yet, so nothing was analysed.";
-  if (s.analyzed === 0 && s.deferred === 0) return "";
+  if (s.analyzed === 0) return s.budget ? budgetWaitingText(s.budget) : "";
   const outcomes = [
     ...(s.proposals || !s.held ? [`${plural(s.proposals, "proposal")} sent above`] : []),
     ...(s.held ? [`${s.held} kept for your review`] : []),
@@ -73,9 +83,75 @@ export function analysisText(s: AnalysisSummary, stillQueued: number): string {
   if (s.held) lines.push("Once I've read all your past emails, I'll show you what I found one card at a time.");
   if (s.unverified) lines.push(`${s.unverified} skipped: I couldn't find my evidence quote in the email, so I won't propose anything from it (I'll retry).`);
   if (s.failed) lines.push(`${s.failed} couldn't be analysed right now (I'll retry).`);
-  if (s.deferred) lines.push(`The monthly AI budget is used up: ${s.deferred} emails are waiting until it resets.`);
-  if (stillQueued) lines.push(`${stillQueued} more queued. Send /sync again to continue.`);
+  // Sending /sync again can't help while the budget is used up.
+  if (s.budget) lines.push(budgetWaitingText(s.budget));
+  else if (stillQueued) lines.push(`${stillQueued} more queued. Send /sync again to continue.`);
   return lines.join("\n");
+}
+
+// ---------- AI budget (rules in lib/llm/budget-policy.ts) ----------
+
+const money = (usd: number) => `$${usd.toFixed(2)}`;
+const budgetName = (scope: BudgetScope) => (scope === "user" ? "your monthly AI allowance" : "the shared monthly AI budget");
+const STILL_WORKS = "/status, /pending, approving cards and the dashboard still work.";
+
+function budgetWaitingText(b: NonNullable<AnalysisSummary["budget"]>): string {
+  return `AI is paused until ${resetDateText(b.resetsOn)} because ${budgetName(b.scope)} is used up: ${plural(b.waiting, "email")} wait unread and will be read then.`;
+}
+
+/** The reply to a question while the AI is paused: whose budget, until when, and what still works. */
+export function budgetPausedText(scope: BudgetScope, resetsOn: Date): string {
+  return `${capital(budgetName(scope))} is used up, so I can't answer questions or read new emails until ${resetDateText(resetsOn)}. New emails wait and are read then. ${STILL_WORKS}`;
+}
+
+export function chatLimitText(mode: BudgetMode): string {
+  const why = mode.level === "low" && mode.limitedBy ? ` while ${budgetName(mode.limitedBy)} is past 80% (until ${resetDateText(mode.resetsOn)})` : "";
+  return `You've asked ${mode.chatDailyLimit} questions in the last 24 hours, which is the daily limit${why}. /status still works.`;
+}
+
+/** For /status: this month's spend, and what's limited or paused and until when. */
+export function budgetStatusLines(mode: BudgetMode): string[] {
+  const lines: string[] = [];
+  if (mode.user) lines.push(`AI this month: ${money(mode.user.spentUsd)} of your ${money(mode.user.capUsd)}.`);
+  if (mode.service.level !== "ok") lines.push(`Shared AI budget: ${money(mode.service.spentUsd)} of ${money(mode.service.capUsd)}.`);
+  const until = resetDateText(mode.resetsOn);
+  if (mode.level === "low" && mode.limitedBy) {
+    lines.push(
+      `${capital(budgetName(mode.limitedBy))} is past 80%, so until ${until}: up to ${mode.chatDailyLimit} questions a day${mode.lighterEmailModel ? ", and emails are read with a lighter model" : ""}.`,
+    );
+  }
+  if (mode.level === "out" && mode.limitedBy) {
+    lines.push(`Paused until ${until} because ${budgetName(mode.limitedBy)} is used up: questions and reading new emails. ${STILL_WORKS}`);
+  }
+  return lines;
+}
+
+/** A once-a-month notice when a budget crosses 50% (admin only), 80% or is used up. */
+export function budgetNoticeText(kind: NoticeKind, status: ScopeStatus, resetsOn: Date, lighterEmailModel: boolean): string {
+  const month = monthName(resetsOn);
+  const until = resetDateText(resetsOn);
+  const amount = `${money(status.spentUsd)} of ${money(status.capUsd)}`;
+  const limits = `up to ${CHAT_DAILY_LIMIT_LOW} questions a day${lighterEmailModel ? ", and emails are read with a lighter model" : ""}`;
+  const paused = `I won't answer questions or read new emails until ${until}: they wait and are read then. ${STILL_WORKS}`;
+  if (kind.audience === "admin") {
+    if (kind.pct === 50) return `Admin: the shared AI budget is at 50% for ${month} (${amount}). Nothing changes yet.`;
+    if (kind.pct === 80) return `Admin: the shared AI budget is past 80% for ${month} (${amount}). Until ${until} everyone gets ${limits}.`;
+    return `Admin: the shared AI budget for ${month} is used up (${amount}). AI is paused for everyone until ${until}.`;
+  }
+  if (kind.scope === "user") {
+    return kind.pct === 80
+      ? `You've used 80% of your AI allowance for ${month} (${amount}). To make it last, until ${until}: ${limits}. Everything else works as usual.`
+      : `Your AI allowance for ${month} is used up (${amount}). ${paused}`;
+  }
+  return kind.pct === 80
+    ? `The shared AI budget for all users is past 80% for ${month}. To make it last, until ${until}: ${limits}. Everything else works as usual.`
+    : `The shared AI budget for all users is used up for ${month}. ${paused}`;
+}
+
+/** /pending and the review button while the past emails are still being read. */
+export function stillReadingText(mode?: BudgetMode): string {
+  if (!mode || mode.aiOn || !mode.limitedBy) return STILL_READING_TEXT;
+  return `I'm still reading your past emails, but AI is paused until ${resetDateText(mode.resetsOn)} because ${budgetName(mode.limitedBy)} is used up. Your review starts once they're read.`;
 }
 
 export const DECISION_TOAST: Record<Decision["kind"], string> = {
@@ -131,7 +207,7 @@ export type StatsForText = {
 };
 
 /** /status: straight from the database, no AI, so it works even when the AI budget is used up. */
-export function statusText(s: StatsForText): string {
+export function statusText(s: StatsForText, budget?: BudgetMode): string {
   if (!s.coverage.gmail && s.total === 0) return "Gmail isn't connected yet. Send /connect to start.";
   // Open and closed are the two groups; each status belongs to exactly one.
   const group = (statuses: ApplicationStatus[]) =>
@@ -150,6 +226,7 @@ export function statusText(s: StatsForText): string {
     s.coverage.gmail
       ? `From ${s.coverage.gmail}${s.coverage.emails_since ? ` since ${s.coverage.emails_since}` : ""}. Ask me anything about them, e.g. "which applications haven't replied?"`
       : "Gmail is disconnected, so nothing new is being read. Send /connect to resume. You can still ask me about these applications.",
+    ...(budget ? ["", ...budgetStatusLines(budget)] : []),
   ].join("\n");
 }
 

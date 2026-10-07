@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { getBudget, getCurrentUser } from "@/lib/dashboard/data";
+import { resetDateText } from "@/lib/llm/budget-policy";
 import { logout } from "./actions";
 
 export const metadata = { title: "Dashboard · Job Hunt Tracker" };
@@ -39,18 +40,25 @@ export default function DashboardLayout({ children }: LayoutProps<"/dashboard">)
   );
 }
 
-// Model spend against the hard cap the code enforces. Never over budget silently (DECISIONS §7).
+// Your AI allowance this month, against the hard cap the code enforces. Never over budget silently
+// (DECISIONS §7): when limited or paused it says so, and whose budget caused it.
 async function BudgetMeter() {
-  const { spentUsd, capUsd, percent } = await getBudget();
+  const mode = await getBudget();
+  const mine = mode.user!; // always present for a signed-in user
+  const note =
+    mode.level === "ok"
+      ? null
+      : `${mode.level === "out" ? "Paused" : "Limited"} until ${resetDateText(mode.resetsOn)}${mode.limitedBy === "service" ? " (shared budget)" : ""}`;
   return (
-    <Link href="/dashboard/settings#budget" className="block w-48" title="AI spend for all users this month, against the hard cap. See Settings.">
-      <div className="mb-1 flex justify-between text-xs">
+    <Link href="/dashboard/settings#budget" className="block w-52" title="Your AI allowance this month. See Settings for the shared budget.">
+      <div className="mb-1 flex justify-between gap-2 text-xs">
         <span className="text-muted-foreground">AI budget</span>
-        <span className={percent >= 80 ? "font-medium text-destructive" : "tabular-nums"}>
-          ${spentUsd.toFixed(2)} / ${capUsd.toFixed(2)}
+        <span className={note ? "font-medium text-destructive tabular-nums" : "tabular-nums"}>
+          ${mine.spentUsd.toFixed(2)} / ${mine.capUsd.toFixed(2)}
         </span>
       </div>
-      <Progress value={percent} aria-label={`AI budget: $${spentUsd.toFixed(2)} of $${capUsd.toFixed(2)} used this month`} />
+      <Progress value={mine.percent} aria-label={`Your AI allowance: $${mine.spentUsd.toFixed(2)} of $${mine.capUsd.toFixed(2)} used this month`} />
+      {note && <p className="mt-1 text-xs text-destructive">{note}</p>}
     </Link>
   );
 }

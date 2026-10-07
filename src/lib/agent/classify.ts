@@ -44,7 +44,13 @@ export type ClassifiableEmail = {
   bodyText: string | null;
 };
 
-export function classifyEmail(email: ClassifiableEmail, userId: string | null, purpose: "CLASSIFY_EMAIL" | "EVAL" = "CLASSIFY_EMAIL"): Promise<Classification> {
+/** `model`: the budget may pick a lighter one (budget-policy.ts); the default otherwise. */
+export function classifyEmail(
+  email: ClassifiableEmail,
+  userId: string | null,
+  purpose: "CLASSIFY_EMAIL" | "EVAL" = "CLASSIFY_EMAIL",
+  model?: string,
+): Promise<Classification> {
   const prompt = [
     `From: ${email.fromName ? `${email.fromName} <${email.fromAddress}>` : email.fromAddress}`,
     `Date: ${email.receivedAt.toISOString()}`,
@@ -58,6 +64,7 @@ export function classifyEmail(email: ClassifiableEmail, userId: string | null, p
   return generateJson({
     purpose,
     userId,
+    model,
     system: SYSTEM_PROMPT,
     prompt,
     schema: ClassificationSchema,

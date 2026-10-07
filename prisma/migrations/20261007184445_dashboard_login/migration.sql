@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "ActionType" ADD VALUE 'DASHBOARD_LOGIN';
+

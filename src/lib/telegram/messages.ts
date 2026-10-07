@@ -22,7 +22,7 @@ export function welcomeText(firstName: string, isNew: boolean, gmailAddress: str
     "• I propose the change here with Approve / Reject buttons. Nothing changes until you tap Approve.",
     "• After you connect, I read your past emails first, then show you what I found one card at a time.",
     "",
-    "You can /disconnect Gmail or /delete_my_data at any time.",
+    "Send /dashboard to see everything in your browser. You can /disconnect Gmail or /delete_my_data at any time.",
     "",
     gmailAddress ? `Gmail connected: ${gmailAddress}. Send /sync to check for new emails.` : "Next step: send /connect to link your Gmail.",
   ].join("\n");
@@ -192,6 +192,23 @@ export function deleteDoneText(revoke: RevokeResult | "not-connected"): string {
   return ["Done. Everything I stored about you is deleted.", REVOKE_NOTE[revoke], "", "Send /start if you want to begin again."]
     .filter((line, i) => line || i !== 1)
     .join("\n");
+}
+
+/**
+ * The /dashboard reply: the text and its send options together. Previews must stay off: Telegram's
+ * preview crawler would open the link, and that would use it up before the user taps it.
+ */
+export function dashboardLinkReply(link: string) {
+  return [dashboardLinkText(link), { link_preview_options: { is_disabled: true } }] as const;
+}
+
+export function dashboardLinkText(link: string): string {
+  return [
+    "Your dashboard. This link signs you in once, within 10 minutes:",
+    link,
+    "",
+    "It shows your applications, the emails behind them and the cards waiting for you. Approving still happens here in Telegram. Send /dashboard again whenever you need a new link.",
+  ].join("\n");
 }
 
 export const NOT_CONNECTED_FOR_DISCONNECT_TEXT = "Gmail isn't connected, so there's nothing to disconnect. To erase your data, use /delete_my_data.";

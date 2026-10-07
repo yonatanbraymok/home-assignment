@@ -28,21 +28,26 @@ export function decrypt(payload: string): string {
 // ---------- Signed, expiring tokens (links sent in Telegram, OAuth state) ----------
 
 // The purpose is part of the signed payload, so a token minted for one use can't be replayed for another.
-export type TokenPurpose = "gmail-connect" | "gmail-oauth-state" | "dashboard-login";
+export type TokenPurpose = "gmail-connect" | "gmail-oauth-state" | "dashboard-login" | "dashboard-session";
 
 function mac(data: string): string {
   return createHmac("sha256", requireEnv("SESSION_SECRET")).update(data).digest("base64url");
 }
 
-export function signToken(purpose: TokenPurpose, userId: string, ttlSeconds: number): string {
+/** `extra` adds claims (e.g. a nonce); it can't override the purpose, user or expiry. */
+export function signToken(purpose: TokenPurpose, userId: string, ttlSeconds: number, extra: Record<string, string> = {}): string {
   const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds;
-  const body = Buffer.from(JSON.stringify({ p: purpose, u: userId, e: expiresAt })).toString("base64url");
+  const body = Buffer.from(JSON.stringify({ ...extra, p: purpose, u: userId, e: expiresAt })).toString("base64url");
   return `${body}.${mac(body)}`;
 }
 
 /** Returns the userId if the token is authentic, unexpired and minted for `purpose`; otherwise null. */
 export function verifyToken(token: string | null | undefined, purpose: TokenPurpose): string | null {
-  const [body, signature] = (token ?? "").split(".");
+  // Exactly one spelling per token. With extra parts ignored, "<token>.x" would pass as the same
+  // token under a new text, and get past anything keyed on the text, like a single-use link.
+  const parts = (token ?? "").split(".");
+  if (parts.length !== 2) return null;
+  const [body, signature] = parts;
   if (!body || !signature) return null;
   const expected = Buffer.from(mac(body));
   const given = Buffer.from(signature);

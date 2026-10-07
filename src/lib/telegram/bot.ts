@@ -1,6 +1,7 @@
 import { Bot, GrammyError, InlineKeyboard, type Context } from "grammy";
 import { CANCEL_DATA, confirmationData, type AccountAction } from "@/lib/account/confirm";
 import { accountSummary, authorizeConfirmation, deleteAccount, disconnectGmail } from "@/lib/account/manage";
+import { loginLink } from "@/lib/auth/tokens";
 import { analyzePendingEmails } from "@/lib/agent/analyze";
 import { answerQuestion } from "@/lib/agent/chat";
 import { signToken } from "@/lib/crypto";
@@ -23,6 +24,7 @@ import {
   UNKNOWN_COMMAND_TEXT,
   analysisText,
   connectText,
+  dashboardLinkReply,
   deleteConfirmText,
   deleteDoneText,
   disconnectConfirmText,
@@ -235,6 +237,12 @@ function registerHandlers(bot: Bot) {
     const user = await findUser(ctx.from.id);
     if (!user) return ctx.reply(NOTHING_STORED_TEXT);
     await ctx.reply(deleteConfirmText(await accountSummary(user.id)), { reply_markup: confirmKeyboard("delete", user.id) });
+  });
+
+  pm.command("dashboard", async (ctx) => {
+    const user = await findUser(ctx.from.id);
+    if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
+    await ctx.reply(...dashboardLinkReply(loginLink(user.id)));
   });
 
   pm.command("status", async (ctx) => {

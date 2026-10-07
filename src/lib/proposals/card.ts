@@ -1,12 +1,12 @@
 import { InlineKeyboard } from "grammy";
 import type { ApplicationStatus, Confidence, ProposalKind, ProposalState } from "@/generated/prisma/enums";
+import { formatDateTime } from "@/lib/format";
+import { gmailMessageUrl } from "@/lib/gmail/links";
 import type { Candidate } from "./create";
 import { STATUS_LABEL } from "./rules";
 
 // Proposal cards are rendered with Telegram's HTML parse mode; every dynamic value is escaped.
 
-// The target users are students in Israel; dates on cards are shown in local time.
-const DISPLAY_TIME_ZONE = "Asia/Jerusalem";
 const MAX_QUOTE_CHARS = 600;
 const MAX_BUTTON_CHARS = 60;
 
@@ -36,18 +36,6 @@ export type CardData = {
 
 export function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function formatDate(date: Date): string {
-  return date.toLocaleString("en-GB", { timeZone: DISPLAY_TIME_ZONE, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-}
-
-export function gmailMessageUrl(gmailAddress: string | null, messageId: string): string {
-  // ?authuser=<address> opens the right account when several are signed in. (The address inside
-  // the path, percent-encoded, made Gmail answer "account temporarily unavailable".)
-  return gmailAddress
-    ? `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(gmailAddress)}#all/${messageId}`
-    : `https://mail.google.com/mail/u/0/#all/${messageId}`;
 }
 
 /** A "which application is this?" card the owner hasn't answered yet. */
@@ -83,7 +71,7 @@ export function renderCard(card: CardData): { text: string; keyboard: InlineKeyb
     `<blockquote>${e(quote)}</blockquote>`,
     `From: ${e(sender)}`,
     `Subject: ${e(card.email.subject)}`,
-    `Received: ${formatDate(card.email.receivedAt)}`,
+    `Received: ${formatDateTime(card.email.receivedAt)}`,
     `Confidence: <b>${card.confidence}</b>`,
     ...card.warnings.map((w) => `⚠️ ${e(w)}`),
     ...(savesJobRef ? [`Approving also saves job ID ${e(card.jobRef!)} to this application.`] : []),
@@ -124,8 +112,8 @@ function statusLine(card: CardData, choosing: boolean): string {
       return (
         review +
         (choosing
-          ? `<i>Tap the application this email is about to mark it ${STATUS_LABEL[card.toStatus]}. Nothing changes until you tap. Expires ${formatDate(card.expiresAt)}.</i>`
-          : `<i>Nothing changes until you tap Approve. Expires ${formatDate(card.expiresAt)}.</i>`)
+          ? `<i>Tap the application this email is about to mark it ${STATUS_LABEL[card.toStatus]}. Nothing changes until you tap. Expires ${formatDateTime(card.expiresAt)}.</i>`
+          : `<i>Nothing changes until you tap Approve. Expires ${formatDateTime(card.expiresAt)}.</i>`)
       );
     }
     case "EXECUTED":

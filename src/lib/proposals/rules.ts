@@ -3,6 +3,16 @@ import type { ApplicationStatus, Confidence, EmailCategory } from "@/generated/p
 // Counted from when the card is shown (a card waiting in the review queue doesn't expire).
 export const PROPOSAL_TTL_MS = 7 * 86_400_000;
 
+/**
+ * Cards still waiting for the owner's tap, counted the same way by /status, the chat and the
+ * dashboard. A card past its 7 days can't be approved any more, even before the cron marks it.
+ */
+export const waitingForDecisionWhere = (userId: string, now: Date) => ({
+  userId,
+  state: { in: ["PENDING" as const, "FAILED" as const] },
+  OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+});
+
 /** Review cards not shown yet: held from past emails, or moved back with "Later". */
 export const reviewQueueWhere = (userId: string) => ({ userId, heldForReview: true, state: "PENDING" as const, expiresAt: null });
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AnalysisSummary } from "@/lib/agent/analyze";
-import { analysisText, deleteConfirmText, deleteDoneText, reviewReadyText, statusText, type StatsForText } from "./messages";
+import { analysisText, dashboardLinkReply, dashboardLinkText, deleteConfirmText, deleteDoneText, reviewReadyText, statusText, type StatsForText } from "./messages";
 
 const stats = (gmail: string | null, total: number): StatsForText => ({
   total,
@@ -45,4 +45,13 @@ test("/sync says held proposals wait for the review instead of claiming cards we
   assert.doesNotMatch(text, /sent above/);
   assert.match(text, /one card at a time/);
   assert.match(analysisText({ ...base, proposals: 1, held: 0 }, 0), /1 proposal sent above/);
+});
+
+test("the dashboard message carries the link and says it works once", () => {
+  const text = dashboardLinkText("https://tracker.example.com/api/auth/login?t=abc.def");
+  assert.match(text, /\nhttps:\/\/tracker\.example\.com\/api\/auth\/login\?t=abc\.def\n/);
+  assert.match(text, /once, within 10 minutes/);
+  assert.match(text, /Approving still happens here in Telegram/);
+  // A preview would open the single-use link before the user does.
+  assert.equal(dashboardLinkReply("https://x.example/l")[1].link_preview_options.is_disabled, true);
 });

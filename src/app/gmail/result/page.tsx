@@ -17,7 +17,8 @@ export default function GmailResultPage(props: PageProps<"/gmail/result">) {
 
 async function ResultMessage({ searchParams }: Pick<PageProps<"/gmail/result">, "searchParams">) {
   const { s } = await searchParams;
-  const status = (typeof s === "string" && s in RESULT_MESSAGES ? s : "error") as ResultStatus;
+  // Own keys only: `in` would also accept "toString" and other built-in keys.
+  const status = (typeof s === "string" && Object.hasOwn(RESULT_MESSAGES, s) ? s : "error") as ResultStatus;
   const message = RESULT_MESSAGES[status];
   return (
     <>

@@ -20,6 +20,18 @@ test("decrypt rejects tampered ciphertext", () => {
   assert.throws(() => decrypt(parts.join(".")));
 });
 
+test("a token has exactly one spelling: extra dot-separated parts are refused", () => {
+  const token = signToken("dashboard-login", "user_1", 60);
+  assert.equal(verifyToken(token, "dashboard-login"), "user_1");
+  for (const respelled of [`${token}.`, `${token}.x`, `${token}.a.b`, `.${token}`]) assert.equal(verifyToken(respelled, "dashboard-login"), null);
+});
+
+test("extra claims can't override the purpose, user or expiry", () => {
+  const token = signToken("dashboard-login", "user_1", 60, { p: "dashboard-session", u: "user_2", n: "x" });
+  assert.equal(verifyToken(token, "dashboard-login"), "user_1");
+  assert.equal(verifyToken(token, "dashboard-session"), null);
+});
+
 test("signed tokens verify only for their purpose, unexpired and untampered", () => {
   const token = signToken("gmail-connect", "user_1", 60);
   assert.equal(verifyToken(token, "gmail-connect"), "user_1");

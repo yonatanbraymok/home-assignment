@@ -8,3 +8,8 @@ export function requireEnv(name: string): string {
 export function appUrl(path = "/"): string {
   return new URL(path, requireEnv("APP_URL")).toString();
 }
+
+/** The bot's chat in Telegram, for "Open Telegram" links and buttons. */
+export function botUrl(): string {
+  return `https://t.me/${requireEnv("TELEGRAM_BOT_USERNAME")}`;
+}

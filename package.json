@@ -17,7 +17,8 @@
     "eval:classifier": "tsx --env-file=.env.local evals/classifier.ts",
     "eval:chat": "tsx --env-file=.env.local evals/chat.ts",
     "eval:account": "tsx --env-file=.env.local evals/account.ts",
-    "eval:review": "tsx --env-file=.env.local evals/review.ts"
+    "eval:review": "tsx --env-file=.env.local evals/review.ts",
+    "eval:dashboard": "tsx --env-file=.env.local evals/dashboard.ts"
   },
   "dependencies": {
     "@google/genai": "^2.27.0",
@@ -25,12 +26,18 @@
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
+    "class-variance-authority": "^0.7.1",
+    "cn": "^0.4.0",
     "google-auth-library": "^11.1.0",
     "grammy": "^1.46.0",
     "html-to-text": "^10.0.1",
+    "lucide-react": "^1.52.0",
     "next": "16.4.0",
+    "radix-ui": "^1.7.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "shadcn": "^4.21.4",
+    "tw-animate-css": "^1.4.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {

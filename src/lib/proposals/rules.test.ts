@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { wordingSupportsCategory } from "@/lib/agent/signals";
-import { escapeHtml, gmailMessageUrl, renderCard, type CardData } from "./card";
+import { gmailMessageUrl } from "@/lib/gmail/links";
+import { escapeHtml, renderCard, type CardData } from "./card";
 import { capConfidence, isExpectedTransition } from "./rules";
 
 test("transitions: forward moves are expected, reversals are flagged", () => {

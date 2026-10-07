@@ -88,6 +88,7 @@ enum ActionType {
   GMAIL_SYNC_FAILED
   GMAIL_DISCONNECTED // the user revoked Gmail access with /disconnect
   ACCOUNT_DELETED // anonymous record that a /delete_my_data happened (no user id, counts only)
+  DASHBOARD_LOGIN // a /dashboard sign-in link was used; its unique dedupeKey makes each link work once
 }
 
 enum LlmPurpose {

@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { ApplicationStatus, EmailCategory } from "@/generated/prisma/enums";
 import { normalizeCompany } from "@/lib/agent/match";
-import { OPEN_STATUSES, STATUS_DESCRIPTION } from "@/lib/proposals/rules";
+import { OPEN_STATUSES, STATUS_DESCRIPTION, waitingForDecisionWhere } from "@/lib/proposals/rules";
 
 // Read-only queries over one user's data. The only data access the chat agent has, and the same
 // functions the MCP server exposes. Every query is scoped to `userId`; nothing here can write.
@@ -105,7 +105,7 @@ export const READ_TOOLS = {
     async run(client, userId) {
       const [byStatus, pending, user, oldest] = await Promise.all([
         client.jobApplication.groupBy({ by: ["status"], where: { userId }, _count: true }),
-        client.statusProposal.count({ where: { userId, state: "PENDING" } }),
+        client.statusProposal.count({ where: waitingForDecisionWhere(userId, new Date()) }),
         client.user.findUnique({ where: { id: userId }, select: { gmailAddress: true, gmailLastSyncAt: true } }),
         client.emailMessage.findFirst({ where: { userId }, orderBy: { receivedAt: "asc" }, select: { receivedAt: true } }),
       ]);

@@ -72,9 +72,32 @@ export const DECISION_TOAST: Record<Decision["kind"], string> = {
   "needs-choice": "Tap the application this email is about.",
 };
 
+export type StatsForText = {
+  total: number;
+  by_status: Partial<Record<string, number>>;
+  open: number;
+  no_reply_yet: number;
+  proposals_waiting_for_decision: number;
+  coverage: { gmail: string | null; emails_since: string | null; last_gmail_check: string | null };
+};
+
+/** /status: straight from the database, no AI, so it works even when the AI budget is used up. */
+export function statusText(s: StatsForText): string {
+  if (!s.coverage.gmail) return "Gmail isn't connected yet. Send /connect to start.";
+  const order = ["APPLIED", "ASSESSMENT", "INTERVIEW", "OFFER", "REJECTED", "WITHDRAWN"];
+  const parts = order.filter((k) => s.by_status[k]).map((k) => `${s.by_status[k]} ${k.toLowerCase()}`);
+  return [
+    `Tracking ${s.total} application${s.total === 1 ? "" : "s"}${parts.length ? `: ${parts.join(", ")}` : ""}.`,
+    `• Still open: ${s.open}`,
+    `• No reply yet: ${s.no_reply_yet}`,
+    `• Waiting for your decision: ${s.proposals_waiting_for_decision}${s.proposals_waiting_for_decision ? " (/pending)" : ""}`,
+    "",
+    `From ${s.coverage.gmail}${s.coverage.emails_since ? ` since ${s.coverage.emails_since}` : ""}. Ask me anything about them, e.g. "which applications haven't replied?"`,
+  ].join("\n");
+}
+
 export const NOT_REGISTERED_TEXT = "Send /start first so I can register you.";
 
 export const NOT_CONNECTED_TEXT = "Connect your Gmail first with /connect.";
 
-export const FREE_TEXT_NOT_READY =
-  "I can't answer questions yet. Send /help to see what I can do.";
+export const UNKNOWN_COMMAND_TEXT = "I don't know that command. Send /help to see what I can do.";

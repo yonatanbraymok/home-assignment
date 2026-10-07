@@ -1,21 +1,25 @@
 import { Bot, GrammyError } from "grammy";
 import { analyzePendingEmails } from "@/lib/agent/analyze";
+import { answerQuestion } from "@/lib/agent/chat";
 import { signToken } from "@/lib/crypto";
 import { db } from "@/lib/db";
 import { appUrl, requireEnv } from "@/lib/env";
 import { GmailAccessRevoked, syncMailbox } from "@/lib/gmail/sync";
 import { quietly, refreshCard, renderCardById, sendCard } from "@/lib/proposals/cards-io";
 import { approveProposal, rejectProposal } from "@/lib/proposals/decide";
+import { READ_TOOLS } from "@/lib/tools/read";
 import {
   DECISION_TOAST,
-  FREE_TEXT_NOT_READY,
   NOT_CONNECTED_TEXT,
   NOT_REGISTERED_TEXT,
+  UNKNOWN_COMMAND_TEXT,
   analysisText,
   connectText,
   helpText,
+  statusText,
   syncText,
   welcomeText,
+  type StatsForText,
 } from "./messages";
 
 const CONNECT_LINK_TTL_SECONDS = 600;
@@ -131,8 +135,23 @@ function registerHandlers(bot: Bot) {
     for (const p of pending) await sendCard(p.id);
   });
 
-  pm.on("message", async (ctx) => {
-    const registered = await findUser(ctx.from.id);
-    await ctx.reply(registered ? FREE_TEXT_NOT_READY : NOT_REGISTERED_TEXT);
+  pm.command("status", async (ctx) => {
+    const user = await findUser(ctx.from.id);
+    if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
+    const stats = (await READ_TOOLS.get_stats.run(db, user.id, {})) as StatsForText;
+    await ctx.reply(statusText(stats));
   });
+
+  // Any other text is a question about the user's applications.
+  pm.on("message:text", async (ctx) => {
+    if (ctx.message.text.startsWith("/")) return ctx.reply(UNKNOWN_COMMAND_TEXT);
+    const user = await findUser(ctx.from.id);
+    if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
+    if (!user.gmailAddress) return ctx.reply(NOT_CONNECTED_TEXT);
+    await ctx.replyWithChatAction("typing");
+    const result = await answerQuestion(user.id, ctx.message.text);
+    await ctx.reply(result.text, { link_preview_options: { is_disabled: true } });
+  });
+
+  pm.on("message", (ctx) => ctx.reply("I can only read text messages. Ask me about your applications, or send /help."));
 }

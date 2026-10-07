@@ -105,7 +105,7 @@ How it's enforced: (1) no write tools exist on the server; (2) tool handlers use
 |---|---|---|
 | 0. Planning (2026-10-07) | Read the brief, picked the problem, wrote an internal build plan (architecture, schema, state machines) and this skeleton, checked current package versions and platform limits | Pinned Prisma 7.10.0. Scheduled sync with Supabase pg_cron because Vercel Hobby cron is daily only. Flagged Google's 7-day token expiry in "Testing" mode. |
 | 1. Scaffold + DB (2026-10-07) | Scaffolded Next.js 16, created the Supabase project, wrote the Prisma schema (6 tables), applied the first migration, added the DB client and a `/api/health` check. Smoke-tested through the transaction pooler: a write inside a transaction, a 64-bit Telegram ID, and rollback. | Migrations are generated with `prisma migrate diff` and applied with `migrate deploy`, so no shadow database is needed on Supabase. "One pending proposal per application" is enforced by a partial unique index in the database, not only in code. |
-| 2. Telegram | **TODO** | |
+| 2. Telegram (2026-10-07) | Created the bot with BotFather. Added `/start` (registers the Telegram account as a user), `/help`, the webhook route, a local polling script and a command-menu setup script. Tested the route with fake updates (no secret, wrong secret, valid update, group chat), then live in Telegram (`/start` twice, `/help`, free text). | The webhook rejects requests without the exact secret and refuses to work if no secret is configured. Failed updates are logged and acknowledged so Telegram doesn't re-send them. The bot ignores group chats, so approvals stay one-to-one. |
 | 3. Gmail sync | **TODO** | |
 | 4. Classifier + approval | **TODO** | |
 | 5. Q&A + budget | **TODO** | |
@@ -122,6 +122,7 @@ I used Claude Code (Claude Opus) as a pair programmer for planning, scaffolding 
 - Checked the npm registry before writing install commands. `prisma`'s `latest` tag points to `8.0.0-rc.21` (a release candidate) while `@prisma/client`'s points to `7.10.0`, so a plain `npm install` would have mixed major versions. All Prisma packages are now pinned to 7.10.0.
 - Found that Google OAuth apps in "Testing" mode issue refresh tokens for `gmail.readonly` that expire after 7 days. That would have broken the deployment during the 10-day review window, so publishing the app to "In production" is now a deploy step.
 - Found that Vercel Hobby cron runs at most once a day, which led to scheduling the sync with Supabase pg_cron.
+- Read grammY's webhook source before relying on it. When no secret is configured, the library skips the secret check entirely, and a handler error returns HTTP 500, which makes Telegram re-send the update. Both are now handled in our route.
 - Tested `create-next-app` in a scratch folder: it refuses to run in a folder that already contains this file, my planning notes or the brief, so the setup commands move them aside first.
 
 **Wrong or misleading**

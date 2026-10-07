@@ -1,0 +1,248 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------- Enums ----------
+
+enum UserRole {
+  ADMIN // receives budget alerts, can see global usage
+  MEMBER
+}
+
+enum ApplicationStatus {
+  APPLIED
+  ASSESSMENT // online assessment / coding test (HackerRank, Codility...)
+  INTERVIEW
+  OFFER
+  REJECTED
+  WITHDRAWN
+}
+
+enum ApplicationSource {
+  EMAIL // created from an approved CREATE_APPLICATION proposal
+  MANUAL // created by the user in the dashboard
+}
+
+enum EmailState {
+  NEW // fetched, not yet processed
+  PREFILTERED_OUT // dropped by the free heuristic filter, no LLM call
+  CLASSIFIED // LLM ran and passed validation
+  FAILED // LLM/validation failed; retried on the next sync
+  DEFERRED_BUDGET // skipped because the budget hard cap was reached
+}
+
+enum EmailCategory {
+  APPLICATION_RECEIVED
+  ASSESSMENT_INVITE
+  INTERVIEW_INVITE
+  REJECTION
+  OFFER
+  OTHER_JOB_RELATED // recruiter outreach, "still reviewing", scheduling noise
+  NOT_JOB_RELATED
+}
+
+enum ProposalKind {
+  CREATE_APPLICATION
+  UPDATE_STATUS
+}
+
+enum ProposalState {
+  PENDING // waiting for a human tap in Telegram
+  EXECUTED // approved and applied in one DB transaction
+  REJECTED // human tapped Reject
+  EXPIRED // nobody decided before expiresAt
+  SUPERSEDED // a newer proposal for the same application replaced it
+  STALE // approved, but the application changed since the proposal; nothing applied
+  FAILED // approved, transaction failed and rolled back; retryable
+}
+
+enum Confidence {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum Actor {
+  AGENT
+  USER
+  SYSTEM
+  MCP_CLIENT
+}
+
+enum ActionType {
+  EMAIL_CLASSIFIED
+  PROPOSAL_CREATED
+  PROPOSAL_EXECUTED
+  PROPOSAL_REJECTED
+  PROPOSAL_EXPIRED
+  PROPOSAL_SUPERSEDED
+  PROPOSAL_STALE
+  PROPOSAL_FAILED
+  APPLICATION_EDITED
+  CHAT_ANSWERED
+  MCP_TOOL_CALLED
+  BUDGET_THRESHOLD
+  GMAIL_SYNC_FAILED
+}
+
+enum LlmPurpose {
+  CLASSIFY_EMAIL
+  CHAT
+  EVAL
+}
+
+// ---------- Models ----------
+
+model User {
+  id                   String    @id @default(cuid())
+  telegramUserId       BigInt    @unique // Telegram IDs exceed 32 bits
+  telegramChatId       BigInt
+  telegramUsername     String?
+  displayName          String?
+  role                 UserRole  @default(MEMBER)
+  gmailAddress         String?   @unique
+  gmailRefreshTokenEnc String? // AES-256-GCM ciphertext; never logged or returned
+  gmailConnectedAt     DateTime?
+  gmailLastSyncAt      DateTime?
+  gmailSyncError       String?
+  mcpTokenHash         String?   @unique // sha256 of the bearer token; plaintext shown once
+  mcpTokenCreatedAt    DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  applications JobApplication[]
+  emails       EmailMessage[]
+  proposals    StatusProposal[]
+  actionLogs   ActionLog[]
+  llmUsage     LlmUsage[]
+}
+
+model JobApplication {
+  id              String            @id @default(cuid())
+  userId          String
+  company         String
+  companyDomain   String? // e.g. "microsoft.com": strongest matching signal
+  roleTitle       String
+  dedupeKey       String // normalize(company) + "|" + normalize(roleTitle)
+  location        String?
+  status          ApplicationStatus @default(APPLIED)
+  source          ApplicationSource
+  appliedAt       DateTime?
+  statusChangedAt DateTime          @default(now())
+  lastEmailAt     DateTime?
+  notes           String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emails     EmailMessage[]
+  proposals  StatusProposal[]
+  actionLogs ActionLog[]
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, status])
+}
+
+model EmailMessage {
+  id             String         @id @default(cuid())
+  userId         String
+  gmailMessageId String
+  gmailThreadId  String
+  fromAddress    String
+  fromName       String?
+  subject        String
+  receivedAt     DateTime
+  snippet        String
+  bodyText       String? // latest message only, quoted history stripped, capped; nulled if NOT_JOB_RELATED
+  state          EmailState     @default(NEW)
+  category       EmailCategory?
+  analysis       Json? // validated model output, kept for audit and evals
+  applicationId  String?
+  createdAt      DateTime       @default(now())
+
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application JobApplication?  @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  proposals   StatusProposal[]
+
+  @@unique([userId, gmailMessageId]) // idempotent sync
+  @@index([userId, state])
+  @@index([userId, receivedAt])
+}
+
+model StatusProposal {
+  id                      String             @id @default(cuid())
+  userId                  String
+  emailId                 String // required: no source email, no proposal
+  applicationId           String? // null for CREATE_APPLICATION
+  kind                    ProposalKind
+  fromStatus              ApplicationStatus? // snapshot; must still match at execution time
+  toStatus                ApplicationStatus
+  company                 String
+  roleTitle               String
+  reasoning               String // the "why" shown to the approver
+  evidenceQuote           String // verified verbatim substring of the email body
+  confidence              Confidence
+  warnings                String[]
+  state                   ProposalState      @default(PENDING)
+  telegramChatId          BigInt?
+  telegramMessageId       Int?
+  decidedByTelegramUserId BigInt?
+  decidedAt               DateTime?
+  executedAt              DateTime?
+  failureReason           String?
+  expiresAt               DateTime
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email       EmailMessage    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  application JobApplication? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  actionLogs  ActionLog[]
+
+  // At most one PENDING proposal per application (NULLs never collide, so create-proposals are unaffected).
+  @@unique([applicationId], map: "one_pending_per_application", where: raw("state = 'PENDING'"))
+  @@index([userId, state])
+  @@index([applicationId, state])
+}
+
+// Append-only audit trail. Ordered by id, never by createdAt (ties).
+model ActionLog {
+  id            BigInt     @id @default(autoincrement())
+  userId        String?
+  actor         Actor
+  actorRef      String? // telegram user id, "mcp:<userId>", "cron"
+  action        ActionType
+  proposalId    String?
+  applicationId String?
+  payload       Json?
+  dedupeKey     String?    @unique // one-time events, e.g. "budget:2026-10:80"
+  createdAt     DateTime   @default(now())
+
+  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  proposal    StatusProposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+  application JobApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, id])
+}
+
+// One row per Gemini call; the budget guard sums costUsd for the current month.
+model LlmUsage {
+  id           BigInt     @id @default(autoincrement())
+  userId       String?
+  purpose      LlmPurpose
+  model        String
+  inputTokens  Int
+  outputTokens Int // includes thinking tokens (billed as output)
+  costUsd      Decimal    @db.Decimal(10, 6)
+  createdAt    DateTime   @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+}

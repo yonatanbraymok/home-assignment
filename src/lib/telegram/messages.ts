@@ -1,4 +1,6 @@
+import type { AccountSummary } from "@/lib/account/manage";
 import type { AnalysisSummary } from "@/lib/agent/analyze";
+import type { RevokeResult } from "@/lib/gmail/oauth";
 import type { SyncSummary } from "@/lib/gmail/sync";
 import type { Decision } from "@/lib/proposals/decide";
 import { CLOSED_STATUSES, OPEN_STATUSES, STATUS_DESCRIPTION } from "@/lib/proposals/rules";
@@ -14,6 +16,8 @@ export function welcomeText(firstName: string, isNew: boolean, gmailAddress: str
     "• I spot confirmations, online assessments, interviews, rejections and offers",
     "• For each one I explain why, quoting the exact sentence from the email",
     "• I propose the change here with Approve / Reject buttons. Nothing changes until you tap Approve.",
+    "",
+    "You can /disconnect Gmail or /delete_my_data at any time.",
     "",
     gmailAddress ? `Gmail connected: ${gmailAddress}. Send /sync to check for new emails.` : "Next step: send /connect to link your Gmail.",
   ].join("\n");
@@ -84,7 +88,7 @@ export type StatsForText = {
 
 /** /status: straight from the database, no AI, so it works even when the AI budget is used up. */
 export function statusText(s: StatsForText): string {
-  if (!s.coverage.gmail) return "Gmail isn't connected yet. Send /connect to start.";
+  if (!s.coverage.gmail && s.total === 0) return "Gmail isn't connected yet. Send /connect to start.";
   // Open and closed are the two groups; each status belongs to exactly one.
   const group = (statuses: ApplicationStatus[]) =>
     statuses.filter((k) => s.by_status[k]).map((k) => `  • ${STATUS_DESCRIPTION[k][0].toUpperCase()}${STATUS_DESCRIPTION[k].slice(1)}: ${s.by_status[k]}`);
@@ -99,9 +103,58 @@ export function statusText(s: StatsForText): string {
     "",
     `Waiting for your decision: ${s.proposals_waiting_for_decision}${s.proposals_waiting_for_decision ? " (/pending)" : ""}`,
     "",
-    `From ${s.coverage.gmail}${s.coverage.emails_since ? ` since ${s.coverage.emails_since}` : ""}. Ask me anything about them, e.g. "which applications haven't replied?"`,
+    s.coverage.gmail
+      ? `From ${s.coverage.gmail}${s.coverage.emails_since ? ` since ${s.coverage.emails_since}` : ""}. Ask me anything about them, e.g. "which applications haven't replied?"`
+      : "Gmail is disconnected, so nothing new is being read. Send /connect to resume. You can still ask me about these applications.",
   ].join("\n");
 }
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+const REVOKE_NOTE: Record<RevokeResult | "not-connected", string> = {
+  revoked: "Google access is revoked.",
+  "already-invalid": "Google access was already revoked.",
+  failed: "I couldn't confirm the revoke with Google. To be sure, remove \"Job Hunt Tracker\" at https://myaccount.google.com/permissions",
+  "not-connected": "",
+};
+
+export function disconnectConfirmText(gmailAddress: string): string {
+  return [
+    `Disconnect ${gmailAddress}?`,
+    "",
+    "• I'll revoke my read access at Google and delete the stored token, so I stop reading your email.",
+    "• Your tracker stays: applications, their history, /status and questions keep working.",
+    "• You can /connect again at any time.",
+    "",
+    "To erase everything instead, use /delete_my_data.",
+  ].join("\n");
+}
+
+export function disconnectDoneText(revoke: RevokeResult): string {
+  return `Gmail disconnected. ${REVOKE_NOTE[revoke]}\n\nYour tracker is still here. Send /connect to start reading email again.`;
+}
+
+export function deleteConfirmText(s: AccountSummary): string {
+  return [
+    "Delete everything I store about you?",
+    "",
+    `This permanently deletes ${plural(s.applications, "application")}, ${plural(s.emails, "stored email")} with their evidence, ${plural(s.proposals, "card")}, ${plural(s.questions, "chat question")} and your registration, and revokes Gmail access.`,
+    "",
+    "• Cost records stay, without your name; they hold no content.",
+    "• Messages already in this Telegram chat stay. Clear the chat in Telegram to remove them.",
+    "• This can't be undone.",
+  ].join("\n");
+}
+
+export function deleteDoneText(revoke: RevokeResult | "not-connected"): string {
+  return ["Done. Everything I stored about you is deleted.", REVOKE_NOTE[revoke], "", "Send /start if you want to begin again."]
+    .filter((line, i) => line || i !== 1)
+    .join("\n");
+}
+
+export const NOT_CONNECTED_FOR_DISCONNECT_TEXT = "Gmail isn't connected, so there's nothing to disconnect. To erase your data, use /delete_my_data.";
+
+export const NOTHING_STORED_TEXT = "I don't store anything about you.";
 
 export const NOT_REGISTERED_TEXT = "Send /start first so I can register you.";
 

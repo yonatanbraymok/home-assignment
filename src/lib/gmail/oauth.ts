@@ -35,3 +35,18 @@ export function isRevokedGrant(err: unknown): boolean {
   const data = (err as { response?: { data?: { error?: string } } })?.response?.data;
   return data?.error === "invalid_grant" || (err instanceof Error && err.message.includes("invalid_grant"));
 }
+
+export type RevokeResult = "revoked" | "already-invalid" | "failed";
+
+/** Withdraws the app's access at Google, so it also disappears from the user's Google permissions. */
+export async function revokeGmailAccess(refreshTokenEnc: string): Promise<RevokeResult> {
+  try {
+    await createOAuthClient().revokeToken(decrypt(refreshTokenEnc));
+    return "revoked";
+  } catch (err) {
+    // 400 means the token is no longer valid (already revoked in Google's settings, or expired).
+    if ((err as { response?: { status?: number } })?.response?.status === 400) return "already-invalid";
+    console.error("gmail revoke failed:", err instanceof Error ? err.message : err);
+    return "failed";
+  }
+}

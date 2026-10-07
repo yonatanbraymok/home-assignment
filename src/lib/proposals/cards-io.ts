@@ -11,7 +11,7 @@ async function loadCard(proposalId: string) {
   const p = await db.statusProposal.findUnique({
     where: { id: proposalId },
     include: {
-      email: { select: { fromAddress: true, fromName: true, subject: true, receivedAt: true, gmailThreadId: true } },
+      email: { select: { fromAddress: true, fromName: true, subject: true, receivedAt: true, gmailMessageId: true } },
       user: { select: { gmailAddress: true, telegramChatId: true } },
       application: { select: { status: true, roleTitle: true, jobRef: true } },
     },

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { wordingSupportsCategory } from "@/lib/agent/signals";
-import { escapeHtml, gmailThreadUrl, renderCard, type CardData } from "./card";
+import { escapeHtml, gmailMessageUrl, renderCard, type CardData } from "./card";
 import { capConfidence, isExpectedTransition } from "./rules";
 
 test("transitions: forward moves are expected, reversals are flagged", () => {
@@ -40,7 +40,7 @@ const card: CardData = {
   warnings: ["Unusual change"],
   expiresAt: new Date("2026-10-14T10:00:00Z"),
   failureReason: null,
-  email: { fromAddress: "jobs@att.com", fromName: "AT&T", subject: "Update", receivedAt: new Date("2026-10-07T10:00:00Z"), gmailThreadId: "18f" },
+  email: { fromAddress: "jobs@att.com", fromName: "AT&T", subject: "Update", receivedAt: new Date("2026-10-07T10:00:00Z"), gmailMessageId: "18f" },
   gmailAddress: "dana@gmail.com",
 };
 
@@ -57,7 +57,9 @@ test("card escapes every dynamic value and shows buttons only while pending", ()
   assert.equal(decided.keyboard.inline_keyboard.flat().length, 1); // only "Open email"
 
   assert.equal(escapeHtml("a<b>&c"), "a&lt;b&gt;&amp;c");
-  assert.equal(gmailThreadUrl("dana@gmail.com", "18f"), "https://mail.google.com/mail/u/dana%40gmail.com/#all/18f");
+  // The format the user verified opens the email; an address in the path gave Gmail's 404.
+  assert.equal(gmailMessageUrl("dana@gmail.com", "18f"), "https://mail.google.com/mail/u/?authuser=dana%40gmail.com#all/18f");
+  assert.equal(gmailMessageUrl(null, "18f"), "https://mail.google.com/mail/u/0/#all/18f");
 });
 
 test("a which-application card offers each candidate, 'new' and 'ignore' instead of Approve", () => {

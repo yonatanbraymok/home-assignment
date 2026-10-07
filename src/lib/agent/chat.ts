@@ -17,7 +17,7 @@ const TIME_ZONE = "Asia/Jerusalem";
 function systemPrompt(today: string, coverage: { gmail: string | null; since: string | null; lastCheck: string | null }) {
   const source = coverage.gmail
     ? `job emails in ${coverage.gmail}${coverage.since ? ` received since ${coverage.since}` : ""}`
-    : "no inbox (Gmail is not connected)";
+    : "emails read before Gmail was disconnected (nothing new is being read now)";
   return `You are Job Hunt Tracker, an assistant that answers a student's questions about their own internship and job applications.
 
 Today is ${today}. Your data: applications tracked from ${source}, which the user approved. Last Gmail check: ${coverage.lastCheck ?? "never"}. You know nothing else: an application with no email in that inbox is not tracked.

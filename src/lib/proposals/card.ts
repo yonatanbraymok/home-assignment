@@ -28,7 +28,7 @@ export type CardData = {
   expiresAt: Date;
   failureReason: string | null;
   application?: { status: ApplicationStatus; roleTitle: string; jobRef: string | null } | null; // current state
-  email: { fromAddress: string; fromName: string | null; subject: string; receivedAt: Date; gmailThreadId: string };
+  email: { fromAddress: string; fromName: string | null; subject: string; receivedAt: Date; gmailMessageId: string };
   gmailAddress: string | null;
 };
 
@@ -40,9 +40,12 @@ function formatDate(date: Date): string {
   return date.toLocaleString("en-GB", { timeZone: DISPLAY_TIME_ZONE, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-export function gmailThreadUrl(gmailAddress: string | null, threadId: string): string {
-  // Using the address (not /u/0) opens the right account when several are signed in.
-  return `https://mail.google.com/mail/u/${encodeURIComponent(gmailAddress ?? "0")}/#all/${threadId}`;
+export function gmailMessageUrl(gmailAddress: string | null, messageId: string): string {
+  // ?authuser=<address> opens the right account when several are signed in. (The address inside
+  // the path, percent-encoded, made Gmail answer "account temporarily unavailable".)
+  return gmailAddress
+    ? `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(gmailAddress)}#all/${messageId}`
+    : `https://mail.google.com/mail/u/0/#all/${messageId}`;
 }
 
 /** A "which application is this?" card the owner hasn't answered yet. */
@@ -86,7 +89,7 @@ export function renderCard(card: CardData): { text: string; keyboard: InlineKeyb
     statusLine(card, choosing),
   ];
 
-  const keyboard = new InlineKeyboard().url("🔗 Open email", gmailThreadUrl(card.gmailAddress, card.email.gmailThreadId)).row();
+  const keyboard = new InlineKeyboard().url("🔗 Open email", gmailMessageUrl(card.gmailAddress, card.email.gmailMessageId)).row();
   const open = card.state === "PENDING" || card.state === "FAILED";
   if (open && choosing) {
     card.candidates!.forEach((c, i) => keyboard.text(truncate(c.label), `p:c:${card.id}:${i}`).row());

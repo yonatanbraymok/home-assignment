@@ -7,5 +7,7 @@ export const COMMANDS: BotCommand[] = [
   { command: "sync", description: "Check Gmail for new job emails now" },
   { command: "status", description: "Your applications at a glance" },
   { command: "pending", description: "Show proposals waiting for your decision" },
+  { command: "disconnect", description: "Stop reading your Gmail (keeps your tracker)" },
+  { command: "delete_my_data", description: "Erase everything I store about you" },
   { command: "help", description: "What I can do and how approvals work" },
 ];

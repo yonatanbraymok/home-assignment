@@ -1,4 +1,6 @@
-import { Bot, GrammyError } from "grammy";
+import { Bot, GrammyError, InlineKeyboard } from "grammy";
+import { CANCEL_DATA, confirmationData, type AccountAction } from "@/lib/account/confirm";
+import { accountSummary, authorizeConfirmation, deleteAccount, disconnectGmail } from "@/lib/account/manage";
 import { analyzePendingEmails } from "@/lib/agent/analyze";
 import { answerQuestion } from "@/lib/agent/chat";
 import { signToken } from "@/lib/crypto";
@@ -10,11 +12,17 @@ import { approveProposal, rejectProposal } from "@/lib/proposals/decide";
 import { READ_TOOLS } from "@/lib/tools/read";
 import {
   DECISION_TOAST,
+  NOTHING_STORED_TEXT,
+  NOT_CONNECTED_FOR_DISCONNECT_TEXT,
   NOT_CONNECTED_TEXT,
   NOT_REGISTERED_TEXT,
   UNKNOWN_COMMAND_TEXT,
   analysisText,
   connectText,
+  deleteConfirmText,
+  deleteDoneText,
+  disconnectConfirmText,
+  disconnectDoneText,
   helpText,
   statusText,
   syncText,
@@ -35,6 +43,17 @@ export function getBot(): Bot {
   bot = new Bot(requireEnv("TELEGRAM_BOT_TOKEN"));
   registerHandlers(bot);
   return bot;
+}
+
+function confirmKeyboard(action: AccountAction, userId: string) {
+  return new InlineKeyboard()
+    .text(action === "disconnect" ? "🔌 Disconnect Gmail" : "🗑 Delete everything", confirmationData(action, userId))
+    .text("Cancel", CANCEL_DATA);
+}
+
+// Editing a message to the same text is a no-op for us, not an error.
+function ignoreNotModified(err: unknown) {
+  if (!(err instanceof GrammyError && err.description.includes("message is not modified"))) throw err;
 }
 
 function findUser(telegramId: number) {
@@ -67,6 +86,30 @@ function registerHandlers(bot: Bot) {
     if (view.messageId && view.messageId !== ctx.callbackQuery.message?.message_id) {
       await quietly("refresh original card", refreshCard(proposalId));
     }
+  });
+
+  // Confirmation buttons for /disconnect and /delete_my_data. Editing the message without a
+  // keyboard removes the buttons, so a confirmation can be used once.
+  bot.callbackQuery(/^acct:/, async (ctx) => {
+    if (ctx.callbackQuery.data === CANCEL_DATA) {
+      await ctx.answerCallbackQuery({ text: "Cancelled." });
+      return ctx.editMessageText("Cancelled. Nothing changed.").catch(ignoreNotModified);
+    }
+    const auth = await authorizeConfirmation(ctx.callbackQuery.data, BigInt(ctx.from.id));
+    if (auth === "invalid") return ctx.answerCallbackQuery();
+    if (auth === "not-owner") return ctx.answerCallbackQuery({ text: "Only the account owner can confirm this.", show_alert: true });
+    if (auth === "expired" || auth === "not-found") {
+      const text = auth === "expired" ? "This confirmation expired. Nothing changed; send the command again." : "Already deleted.";
+      await ctx.answerCallbackQuery({ text });
+      return ctx.editMessageText(text).catch(ignoreNotModified);
+    }
+    await ctx.answerCallbackQuery();
+    if (auth.action === "disconnect") {
+      const result = await disconnectGmail(auth.userId, `tg:${ctx.from.id}`);
+      return ctx.editMessageText(result.status === "disconnected" ? disconnectDoneText(result.revoke) : "Gmail was already disconnected.").catch(ignoreNotModified);
+    }
+    const result = await deleteAccount(auth.userId);
+    return ctx.editMessageText(result.status === "deleted" ? deleteDoneText(result.revoke) : "Already deleted.").catch(ignoreNotModified);
   });
 
   // Everything else only works in private chats; updates from groups and channels are ignored.
@@ -135,6 +178,19 @@ function registerHandlers(bot: Bot) {
     for (const p of pending) await sendCard(p.id);
   });
 
+  pm.command("disconnect", async (ctx) => {
+    const user = await findUser(ctx.from.id);
+    if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
+    if (!user.gmailRefreshTokenEnc || !user.gmailAddress) return ctx.reply(NOT_CONNECTED_FOR_DISCONNECT_TEXT);
+    await ctx.reply(disconnectConfirmText(user.gmailAddress), { reply_markup: confirmKeyboard("disconnect", user.id) });
+  });
+
+  pm.command("delete_my_data", async (ctx) => {
+    const user = await findUser(ctx.from.id);
+    if (!user) return ctx.reply(NOTHING_STORED_TEXT);
+    await ctx.reply(deleteConfirmText(await accountSummary(user.id)), { reply_markup: confirmKeyboard("delete", user.id) });
+  });
+
   pm.command("status", async (ctx) => {
     const user = await findUser(ctx.from.id);
     if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
@@ -147,7 +203,8 @@ function registerHandlers(bot: Bot) {
     if (ctx.message.text.startsWith("/")) return ctx.reply(UNKNOWN_COMMAND_TEXT);
     const user = await findUser(ctx.from.id);
     if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
-    if (!user.gmailAddress) return ctx.reply(NOT_CONNECTED_TEXT);
+    // After /disconnect the tracker is still there, so questions about it keep working.
+    if (!user.gmailAddress && (await db.jobApplication.count({ where: { userId: user.id } })) === 0) return ctx.reply(NOT_CONNECTED_TEXT);
     await ctx.replyWithChatAction("typing");
     const result = await answerQuestion(user.id, ctx.message.text);
     await ctx.reply(result.text, { link_preview_options: { is_disabled: true } });

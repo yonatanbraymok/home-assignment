@@ -6,12 +6,12 @@ import type { ActionType, Actor } from "@/generated/prisma/client";
 // A bare API client (no update handlers), so background jobs can message users without
 // importing the bot module.
 let api: Api | undefined;
-const telegram = () => (api ??= new Api(requireEnv("TELEGRAM_BOT_TOKEN")));
+export const telegramApi = () => (api ??= new Api(requireEnv("TELEGRAM_BOT_TOKEN")));
 
 /** Sends a plain-text message to a user's private chat. */
 export async function sendToUser(telegramChatId: bigint, text: string): Promise<void> {
   // Private-chat IDs fit in 52 bits, so the Number conversion is exact.
-  await telegram().sendMessage(Number(telegramChatId), text, { link_preview_options: { is_disabled: true } });
+  await telegramApi().sendMessage(Number(telegramChatId), text, { link_preview_options: { is_disabled: true } });
 }
 
 /**

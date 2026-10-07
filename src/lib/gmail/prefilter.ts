@@ -36,6 +36,11 @@ const BODY_TERMS = [
 
 export type PrefilterResult = { candidate: boolean; reason: string };
 
+/** True for applicant-tracking and assessment platforms, whose domain says nothing about the company. */
+export function isAtsDomain(domain: string): boolean {
+  return ATS_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`));
+}
+
 export function prefilter(email: ParsedEmail, trackedDomains: string[] = []): PrefilterResult {
   // Mail you sent to someone else. Mail you sent to yourself has INBOX too and is kept,
   // so testers can email themselves a mock rejection.
@@ -45,8 +50,7 @@ export function prefilter(email: ParsedEmail, trackedDomains: string[] = []): Pr
   const fromDomain = (d: string) => domain === d || domain.endsWith(`.${d}`);
 
   if (ATS_ADDRESSES.includes(email.fromAddress)) return { candidate: true, reason: `ats-address:${email.fromAddress}` };
-  const ats = ATS_DOMAINS.find(fromDomain);
-  if (ats) return { candidate: true, reason: `ats-domain:${ats}` };
+  if (isAtsDomain(domain)) return { candidate: true, reason: `ats-domain:${ATS_DOMAINS.find(fromDomain)}` };
   const tracked = trackedDomains.find(fromDomain);
   if (tracked) return { candidate: true, reason: `tracked-domain:${tracked}` };
 

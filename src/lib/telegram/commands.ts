@@ -5,5 +5,6 @@ export const COMMANDS: BotCommand[] = [
   { command: "start", description: "Register and see what I do" },
   { command: "connect", description: "Connect your Gmail (read-only)" },
   { command: "sync", description: "Check Gmail for new job emails now" },
+  { command: "pending", description: "Show proposals waiting for your decision" },
   { command: "help", description: "What I can do and how approvals work" },
 ];

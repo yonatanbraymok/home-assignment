@@ -1,4 +1,6 @@
+import type { AnalysisSummary } from "@/lib/agent/analyze";
 import type { SyncSummary } from "@/lib/gmail/sync";
+import type { Decision } from "@/lib/proposals/decide";
 import { COMMANDS } from "./commands";
 
 export function welcomeText(firstName: string, isNew: boolean, gmailAddress: string | null) {
@@ -44,6 +46,30 @@ export function syncText({ fetched, candidates, skipped, remaining }: SyncSummar
   if (remaining > 0) lines.push(`${remaining} older emails still to fetch. Send /sync again to continue.`);
   return lines.join("\n");
 }
+
+export function analysisText(s: AnalysisSummary, stillQueued: number): string {
+  if (s.skippedNotConfigured) return "Email analysis isn't configured yet, so nothing was analysed.";
+  if (s.analyzed === 0 && s.deferred === 0) return "";
+  const lines = [
+    `Analysed ${s.analyzed}: ${s.proposals} proposal${s.proposals === 1 ? "" : "s"} sent above, ${s.noChange} needed no change, ${s.notJobRelated} not job-related.`,
+  ];
+  if (s.unverified) lines.push(`${s.unverified} skipped: I couldn't find my evidence quote in the email, so I won't propose anything from it (I'll retry).`);
+  if (s.failed) lines.push(`${s.failed} couldn't be analysed right now (I'll retry).`);
+  if (s.deferred) lines.push(`The monthly AI budget is used up: ${s.deferred} emails are waiting until it resets.`);
+  if (stillQueued) lines.push(`${stillQueued} more queued. Send /sync again to continue.`);
+  return lines.join("\n");
+}
+
+export const DECISION_TOAST: Record<Decision["kind"], string> = {
+  executed: "Done: application updated.",
+  rejected: "Rejected. Nothing was changed.",
+  stale: "Not applied: the application changed since this proposal.",
+  failed: "Couldn't apply it. Nothing was changed; you can retry.",
+  already: "Already decided.",
+  expired: "This proposal expired. Nothing was changed.",
+  "not-yours": "Only the owner of this application can decide this.",
+  "not-found": "This proposal no longer exists.",
+};
 
 export const NOT_REGISTERED_TEXT = "Send /start first so I can register you.";
 

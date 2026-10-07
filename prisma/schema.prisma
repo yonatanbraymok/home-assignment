@@ -79,6 +79,7 @@ enum ActionType {
   PROPOSAL_SUPERSEDED
   PROPOSAL_STALE
   PROPOSAL_FAILED
+  APPROVAL_DENIED // someone other than the owner tapped a proposal button
   APPLICATION_EDITED
   CHAT_ANSWERED
   MCP_TOOL_CALLED

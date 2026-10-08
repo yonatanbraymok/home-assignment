@@ -1,8 +1,10 @@
 import { gmail } from "@googleapis/gmail";
 import { encrypt, verifyToken } from "@/lib/crypto";
+import { resetDemo } from "@/lib/demo/demo";
 import { db } from "@/lib/db";
 import { appUrl } from "@/lib/env";
 import { GMAIL_SCOPE, createOAuthClient } from "@/lib/gmail/oauth";
+import { gmailConnectedText } from "@/lib/telegram/messages";
 import { sendToUser } from "@/lib/telegram/notify";
 import type { ResultStatus } from "@/app/gmail/result/statuses";
 
@@ -41,12 +43,14 @@ export async function GET(req: Request) {
   if (!address) return result("error");
 
   const [user, owner] = await Promise.all([
-    db.user.findUnique({ where: { id: userId }, select: { gmailAddress: true, telegramChatId: true } }),
+    db.user.findUnique({ where: { id: userId }, select: { gmailAddress: true, telegramChatId: true, demoAt: true } }),
     db.user.findUnique({ where: { gmailAddress: address }, select: { id: true } }),
   ]);
   if (!user) return result("expired");
   if (owner && owner.id !== userId) return result("already-linked");
 
+  // Real email ends the demo: sample and real emails never mix.
+  if (user.demoAt) await resetDemo(userId);
   const switchedAccount = user.gmailAddress !== address;
   await db.user.update({
     where: { id: userId },
@@ -61,10 +65,7 @@ export async function GET(req: Request) {
     },
   });
 
-  await sendToUser(
-    user.telegramChatId,
-    `Gmail connected: ${address}\n\nI only read; I can't send, delete or change anything. Send /sync to fetch your job emails from the last 60 days. I'll read them all first, then show you what I found one card at a time. After that I check your inbox every 5 minutes on my own; send /sync whenever you want me to check right now.`,
-  ).catch((e) => console.error("connected notice failed:", e instanceof Error ? e.message : e));
+  await sendToUser(user.telegramChatId, gmailConnectedText(address, Boolean(user.demoAt))).catch((e) => console.error("connected notice failed:", e instanceof Error ? e.message : e));
 
   return result("connected");
 }

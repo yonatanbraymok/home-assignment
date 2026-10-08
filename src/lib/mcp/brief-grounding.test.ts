@@ -94,3 +94,8 @@ test("'nothing to prepare for' has the same shape, empty, and states the reason"
   );
   assert.match(pending.pendingApproval!.note, /hasn't approved the change in Telegram yet/);
 });
+
+test("the Developers page's sample brief matches the real output schema", async () => {
+  const { EXAMPLE_BRIEF } = await import("./example");
+  assert.equal(BriefOutputSchema.safeParse(EXAMPLE_BRIEF).success, true);
+});

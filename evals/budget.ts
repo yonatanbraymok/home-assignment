@@ -55,13 +55,13 @@ async function main() {
   await spend(a.id, 2.1); // A: $4.10 of $5
   assert.deepEqual(pick(await budgetStatus(a.id, MAY)), ["low", "user", 20, "gemini-3.1-flash-lite"]);
   await Promise.all([notices([a.id, b.id]), notices([a.id, b.id])]);
-  assert.deepEqual(take(), ["A: You've used 80% of your AI allowance"]);
+  assert.deepEqual(take(), ["A: Heads up: you've used 80% of your"]);
   await spend(a.id, 0.88); // A: $4.98, not enough left for a whole question
   const aOut = await budgetStatus(a.id, MAY);
   assert.deepEqual(pick(aOut), ["out", "user", 40, "gemini-3.5-flash-lite"]);
   assert.equal(aOut.aiOn, false);
   await notices([a.id, b.id]);
-  assert.deepEqual(take(), ["A: Your AI allowance for May is used"]);
+  assert.deepEqual(take(), ["A: ⏸ Your AI allowance for May is"]);
   await notices([a.id, b.id]);
   assert.deepEqual(take(), []);
   console.log("✔ ok → low (lighter email model, 20 questions) → out; each notice sent once");
@@ -117,10 +117,10 @@ async function main() {
   assert.deepEqual(take(), ["B: Admin: the shared AI budget is at"]);
   await spend(null, 6.5); // shared: $20.48
   await notices([a.id, b.id]);
-  assert.deepEqual(take().sort(), ["A: The shared AI budget for all users", "B: Admin: the shared AI budget is past"]);
+  assert.deepEqual(take().sort(), ["A: Heads up: the shared AI budget for", "B: Admin: the shared AI budget is past"]);
   await spend(b.id, 1.99); // B jumps from ok to out on their own allowance: only "used up" is sent
   await notices([a.id, b.id]);
-  assert.deepEqual(take(), ["B: Your AI allowance for May is used"]);
+  assert.deepEqual(take(), ["B: ⏸ Your AI allowance for May is"]);
   assert.equal(await db.actionLog.count({ where: { dedupeKey: `budget:user:2001-05:80:${b.id}` } }), 1, "80% recorded, not sent");
   console.log("✔ shared notices: admin at 50%, everyone from 80%; a jump sends only the highest");
 
@@ -131,7 +131,7 @@ async function main() {
   await notices([a.id, b.id]);
   assert.deepEqual(take(), ["B: Admin: the shared AI budget for May"]);
   await notices([a.id, b.id]);
-  assert.deepEqual(take(), ["A: The shared AI budget for all users"]);
+  assert.deepEqual(take(), ["A: ⏸ The shared AI budget for all"]);
   await db.actionLog.deleteMany({ where: { dedupeKey: { startsWith: "budget:service:2001-05:100:" } } });
   failNext = { chatId: B_TG, code: 403 }; // B blocked the bot
   await notices([a.id, b.id]);

@@ -1,12 +1,14 @@
 import Link from "next/link";
+import { LegalPage } from "@/components/legal-page";
+import { APP_NAME } from "@/lib/brand";
 
-export const metadata = { title: "Terms · Job Hunt Tracker" };
+export const metadata = { title: `Terms · ${APP_NAME}` };
 
 export default function TermsPage() {
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-10 text-sm leading-relaxed [&_li]:ml-5 [&_li]:list-disc">
-      <h1 className="text-2xl font-semibold">Terms of use</h1>
-      <p className="text-muted-foreground">Job Hunt Tracker · last updated 8 October 2026</p>
+    <LegalPage>
+      <h1>Terms of use</h1>
+      <p className="lead">Job Hunt Tracker · last updated 8 October 2026</p>
       <ul>
         <li>Job Hunt Tracker is a free demonstration project, provided as is, without any warranty or guaranteed availability.</li>
         <li>
@@ -16,17 +18,17 @@ export default function TermsPage() {
         <li>AI use is limited by a monthly allowance; when it&apos;s used up, AI features pause until the next month.</li>
         <li>
           You can stop at any time with <code>/disconnect</code> or <code>/delete_my_data</code>. How your data is handled is described in the{" "}
-          <Link className="underline" href="/privacy">
+          <Link href="/privacy">
             privacy policy
           </Link>
           .
         </li>
       </ul>
       <p>
-        <Link className="underline" href="/">
+        <Link href="/">
           Home
         </Link>
       </p>
-    </main>
+    </LegalPage>
   );
 }

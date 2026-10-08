@@ -28,6 +28,8 @@ export function findSessionUser(userId: string) {
       gmailConnectedAt: true,
       gmailLastSyncAt: true,
       gmailSyncError: true,
+      demoAt: true,
+      telegramUserId: true,
     },
   });
 }
@@ -51,7 +53,7 @@ async function statusStartDates(userId: string, applicationIds?: string[]) {
 }
 
 export async function overviewFor(userId: string) {
-  const [applications, waiting, stats, statusSince] = await Promise.all([
+  const [applications, waiting, stats, statusSince, lastEmails] = await Promise.all([
     db.jobApplication.findMany({
       where: { userId },
       select: { id: true, company: true, roleTitle: true, jobRef: true, status: true, statusChangedAt: true, lastEmailAt: true },
@@ -79,13 +81,21 @@ export async function overviewFor(userId: string) {
     // The same totals as /status and the chat, so the numbers agree everywhere.
     READ_TOOLS.get_stats.run(db, userId, {}) as Promise<DashboardStats>,
     statusStartDates(userId),
+    // The newest job email of each application, for its "last email" button.
+    db.emailMessage.findMany({
+      where: { userId, applicationId: { not: null }, category: { not: "NOT_JOB_RELATED" } },
+      orderBy: { receivedAt: "desc" },
+      distinct: ["applicationId"],
+      select: { applicationId: true, gmailMessageId: true },
+    }),
   ]);
+  const lastEmailOf = new Map(lastEmails.map((e) => [e.applicationId!, e.gmailMessageId]));
   const rows = applications
     .map((a) => {
       const since = statusSince(a);
       // The latest real-world date: the newest email, or the start of the current status.
       const lastUpdate = a.lastEmailAt && a.lastEmailAt > since ? a.lastEmailAt : since;
-      return { ...a, statusSince: since, lastUpdate };
+      return { ...a, statusSince: since, lastUpdate, lastEmailMessageId: lastEmailOf.get(a.id) ?? null };
     })
     .sort((a, b) => b.lastUpdate.getTime() - a.lastUpdate.getTime());
   return {
@@ -169,6 +179,53 @@ export async function applicationDetailFor(userId: string, applicationId: string
     };
   });
   return { application: { ...application, statusSince: statusSince(application) }, timeline };
+}
+
+/** What a new user has done so far, for the dashboard's getting-started checklist. */
+/** The latest job emails and what became of each one: the overview's "Recent activity". */
+export async function recentActivityFor(userId: string, take = 6) {
+  const emails = await db.emailMessage.findMany({
+    where: { userId, state: "CLASSIFIED", category: { not: "NOT_JOB_RELATED" } },
+    orderBy: { receivedAt: "desc" },
+    take,
+    select: {
+      id: true,
+      subject: true,
+      receivedAt: true,
+      category: true,
+      applicationId: true,
+      application: { select: { company: true } },
+      proposals: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { state: true, toStatus: true, company: true, applicationId: true, expiresAt: true },
+      },
+    },
+  });
+  return emails.map(({ proposals, application, ...e }) => {
+    const p = proposals[0] ?? null;
+    return {
+      ...e,
+      company: application?.company ?? p?.company ?? null,
+      applicationId: e.applicationId ?? p?.applicationId ?? null,
+      proposal: p && { state: p.state, toStatus: p.toStatus, expiresAt: p.expiresAt },
+    };
+  });
+}
+
+export async function gettingStartedFor(userId: string) {
+  const [user, applications, questions] = await Promise.all([
+    db.user.findUnique({ where: { id: userId }, select: { gmailAddress: true, demoAt: true, mcpTokenHash: true } }),
+    db.jobApplication.count({ where: { userId } }),
+    db.actionLog.count({ where: { userId, action: "CHAT_ANSWERED" } }),
+  ]);
+  return {
+    gmailConnected: Boolean(user?.gmailAddress || user?.demoAt),
+    demo: Boolean(user?.demoAt),
+    approvedSomething: applications > 0,
+    askedQuestion: questions > 0,
+    hasMcpToken: Boolean(user?.mcpTokenHash),
+  };
 }
 
 /** Counts for the settings page. */

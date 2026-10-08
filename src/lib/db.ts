@@ -13,4 +13,8 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 export const db = globalForPrisma.prisma ?? createClient();
 
+// For interactive transactions. Prisma's 5 s default was too tight on a slow round trip to the
+// database (seen from a laptop far from it): the card or the tap failed and had to be retried.
+export const TX_OPTIONS = { maxWait: 10_000, timeout: 15_000 };
+
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;

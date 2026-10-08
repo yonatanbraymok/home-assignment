@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { TX_OPTIONS, db } from "@/lib/db";
 import { Prisma, type ApplicationStatus, type ProposalState } from "@/generated/prisma/client";
 import { companyDomainFor, dedupeKey } from "@/lib/agent/match";
 import { senderDomain } from "@/lib/gmail/parse";
@@ -131,7 +131,7 @@ export async function approveProposal(proposalId: string, telegramUserId: bigint
           payload: { kind, from: fromStatus, to: p.toStatus, ...(choice !== undefined ? { choice } : {}) },
         },
       });
-    });
+    }, TX_OPTIONS);
     return { kind: "executed" };
   } catch (err) {
     // The transaction rolled back; record the outcome outside it.

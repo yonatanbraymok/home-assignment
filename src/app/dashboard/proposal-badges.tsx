@@ -40,7 +40,7 @@ export function WaitingBadge({ proposal: p }: { proposal: ProposalView }) {
           ? "Awaiting your choice in Telegram"
           : "Awaiting your approval in Telegram";
   return (
-    <Badge variant="outline" className="border-sky-300 text-sky-800 dark:border-sky-800 dark:text-sky-300">
+    <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950 dark:text-indigo-300">
       <Send data-icon="inline-start" />
       {text}
     </Badge>
@@ -54,7 +54,7 @@ export function OutcomeBadge({ proposal: p, now }: { proposal: ProposalView; now
   switch (p.state) {
     case "EXECUTED":
       return (
-        <Badge className="bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
           <CircleCheck data-icon="inline-start" />
           Approved by you in Telegram{on}
         </Badge>

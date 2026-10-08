@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  breakdownOf,
   budgetMode,
+  forecastUsd,
   estimateCallWorstCaseUsd,
   levelOf,
   monthName,
@@ -113,4 +115,12 @@ test("notices: the shared budget tells the admin at 50%, and the admin and every
     "budget:service:2026-10:80:admin",
     "budget:service:2026-10:80:a",
   ]);
+});
+
+test("spend is grouped by what it paid for, and forecast only once a few days have passed", () => {
+  assert.deepEqual(breakdownOf({ CLASSIFY_EMAIL: 0.3, CHAT: 0.1, MCP_BRIEF: 0.02 }), { emails: 0.3, chat: 0.1, briefs: 0.02, other: 0 });
+  assert.equal(forecastUsd(0.5, new Date("2026-10-02T12:00:00Z")), null); // 1.5 days in: too early
+  // 10 days into a 31-day month at $1 → about $3.10 by the end.
+  assert.ok(Math.abs(forecastUsd(1, new Date("2026-10-11T00:00:00Z"))! - 3.1) < 0.001);
+  assert.equal(forecastUsd(0, new Date("2026-10-20T00:00:00Z")), 0);
 });

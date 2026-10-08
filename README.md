@@ -15,7 +15,7 @@ No Gmail needed: the demo loads a sample inbox into your own account and the rea
 3. Tap **▶️ Start review**. Each card shows the change, why, the sentence from the email it relies on, the sender, the date and how confident the agent is. Tap **✅ Approve**, **❌ Reject** or **⏭ Later**.
 4. After the last card, tap **📨 Simulate a new email**: an email "arrives" and its card pops up, as it would from Gmail. Five scripted emails cover an interview, a job-ID match between two roles at one company, a rejection, a *"Which application is this?"* and an offer.
 5. Ask anything in plain words: *"which applications haven't replied?"*, *"what happened with Lumen Health?"*. Answers come from your tracker and say where they came from.
-6. Send **/dashboard** for a one-time sign-in link to the website: the pipeline, each application's timeline with the evidence, the AI budget, and **Ask the agent**, the same agent and the same conversation as in Telegram.
+6. Send **/dashboard** for a one-time sign-in link to the website (it asks you to continue as yourself): the pipeline, each application's timeline with the evidence, the AI budget, and **Ask the agent**, the same agent and the same conversation as in Telegram.
 7. Optional, MCP: on the dashboard's **Developers** page, create a token and connect Claude Code, Cursor or the MCP Inspector. `generate_prep_brief` on Northwind Robotics, after its interview email, returns a grounded interview brief.
 8. **/demo_reset** removes the samples. To use your real inbox, send **/connect** (read-only Gmail access). Google shows *"Google hasn't verified this app"*: the app is published but unverified, so choose **Advanced → Go to Job Hunt Tracker**.
 
@@ -24,7 +24,7 @@ No Gmail needed: the demo loads a sample inbox into your own account and the rea
 - **The action:** creating or updating an application in your tracker (a status change, a new application, a job ID saved).
 - **Who approves:** only the Telegram account that owns the tracker, by tapping **Approve** on that specific card in its private chat with the bot. As a tester, that's you, for your own tracker. One card is one change; there is no "approve all".
 - **What's refused:** someone else's tap, a card older than 7 days, and a card whose application changed after it was made. Group chats are ignored.
-- **What can't approve at all:** the website (including its chat) and other agents (MCP) can read, but never change anything. Only a tap in Telegram does.
+- **What can't approve at all:** the agent never changes your tracker on its own, and other agents (MCP) can only read. On the website you can correct a status by hand when an email was missed; that's your own change, recorded as such, not an approval.
 
 ## What it does
 
@@ -34,7 +34,7 @@ No Gmail needed: the demo loads a sample inbox into your own account and the rea
 - **Proposes in Telegram** and applies a change only on the owner's tap, in one database transaction.
 - **First sync:** 60 days of past email become one summary, then one card at a time.
 - **Answers questions** in Telegram and in the dashboard's chat, from the tracker, through read-only tools. It says so when the data can't answer. Both places share one conversation.
-- **Dashboard:** the pipeline, a timeline per application with the evidence behind every status, the budget, and the chat. It can't approve or change anything.
+- **Dashboard:** the pipeline, a timeline per application with the evidence behind every status, the budget, and the chat. If the agent missed an email, you can correct a status by hand on the application's page.
 - **MCP:** other agents can list applications and ask for a grounded interview or assessment brief. Read-only, scoped to the token's owner.
 - **Monthly budget:** $5 of AI per person and $25 shared, checked before every model call, with Telegram notices at 80% and when it's used up.
 
@@ -50,7 +50,7 @@ flowchart LR
   card -- "owner taps Approve" --> tx[("One Postgres transaction:<br/>the tracker changes")]
   student(("Student")) <--> bot["Telegram bot<br/>(webhook)"]
   bot --> tools["Read-only tools"]
-  student <--> dashboard["Next.js dashboard<br/>(chat; read-only)"]
+  student <--> dashboard["Next.js dashboard<br/>(chat; status fixes by hand)"]
   dashboard --> tools
   dashboard --> db[("Supabase Postgres")]
   tools --> db
@@ -84,7 +84,7 @@ npm run dev                  # http://localhost:3000
 npm run bot:dev              # the bot, by long polling (it refuses while a webhook is set)
 ```
 
-Locally, `/dashboard` and `/connect` put their link in the message text: Telegram only accepts https links in buttons.
+To open the local dashboard, run `npm run dev:login`: it prints a one-time sign-in link for `localhost` (as the admin, or `npm run dev:login -- <telegram id>`). The deployed bot's `/dashboard` always links to the deployed site. When the bot itself runs locally, `/dashboard` and `/connect` put their link in the message text, because Telegram only accepts https links in buttons.
 
 ## Deploy
 
@@ -174,6 +174,6 @@ How they map to the brief's three kinds (an answer checked against the data, rea
 
 - **Google sign-in:** the app is published but unverified, so Google warns on the consent screen and allows up to 100 users.
 - **Sync:** Gmail is polled every 5 minutes. Real-time push (Pub/Sub) is the next step.
-- **Dashboard:** read-only. Every change goes through Telegram.
+- **Dashboard edits:** only the status, by hand. Roles, job IDs and new applications still come from emails.
 - **One database:** local development and production share it.
 - **Budget:** costs are our own count of the tokens the API reports. Two calls at the same moment can overshoot a cap by cents ([DECISIONS.md §7](DECISIONS.md#7-budget-two-hard-caps-and-what-happens-near-them)).

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { statusEditsFor } from "./edit";
 import type { ApplicationStatus, Confidence } from "@/generated/prisma/enums";
 import type { Candidate } from "@/lib/proposals/create";
 import { waitingForDecisionWhere } from "@/lib/proposals/rules";
@@ -158,6 +159,7 @@ export async function applicationDetailFor(userId: string, applicationId: string
     }),
     statusStartDates(userId, [application.id]),
   ]);
+  const edits = await statusEditsFor(userId, application.id);
   // The newest proposal per email (normally the only one).
   const proposalFor = new Map(proposals.map((p) => [p.emailId, { ...p, candidates: (p.candidates as Candidate[] | null) ?? null }]));
 
@@ -178,7 +180,7 @@ export async function applicationDetailFor(userId: string, applicationId: string
       noProposalReason: proposal ? null : (a.noProposalReason ?? null),
     };
   });
-  return { application: { ...application, statusSince: statusSince(application) }, timeline };
+  return { application: { ...application, statusSince: statusSince(application) }, timeline, edits };
 }
 
 /** What a new user has done so far, for the dashboard's getting-started checklist. */
@@ -194,21 +196,6 @@ export async function recentChatFor(userId: string, take = 6) {
     const p = r.payload as { question?: string; answer?: string; channel?: string } | null;
     return p?.question && p.answer ? [{ id: String(r.id), at: r.createdAt, question: p.question, answer: p.answer, channel: p.channel === "dashboard" ? ("dashboard" as const) : ("telegram" as const) }] : [];
   });
-}
-
-export async function gettingStartedFor(userId: string) {
-  const [user, applications, questions] = await Promise.all([
-    db.user.findUnique({ where: { id: userId }, select: { gmailAddress: true, demoAt: true, mcpTokenHash: true } }),
-    db.jobApplication.count({ where: { userId } }),
-    db.actionLog.count({ where: { userId, action: "CHAT_ANSWERED" } }),
-  ]);
-  return {
-    gmailConnected: Boolean(user?.gmailAddress || user?.demoAt),
-    demo: Boolean(user?.demoAt),
-    approvedSomething: applications > 0,
-    askedQuestion: questions > 0,
-    hasMcpToken: Boolean(user?.mcpTokenHash),
-  };
 }
 
 /** Counts for the settings page. */

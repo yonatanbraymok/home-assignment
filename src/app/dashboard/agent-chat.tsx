@@ -53,8 +53,10 @@ export function AgentChat({ initial, className }: { initial: ChatTurn[]; classNa
         <CardDescription>Answers come from your tracker and say where they came from. The same conversation as in Telegram.</CardDescription>
       </CardHeader>
 
-      <CardContent className="flex min-h-0 flex-1 flex-col px-0">
-        <div className="h-80 flex-1 overflow-y-auto px-4 py-4 lg:h-auto lg:max-h-[34rem] lg:min-h-80" aria-live="polite">
+      {/* The messages scroll inside a frame of their own: positioned absolutely, they never add
+          height, so a long conversation can't stretch this card or the pipeline beside it. */}
+      <CardContent className="relative h-96 min-h-0 px-0 lg:h-auto lg:min-h-72 lg:flex-1">
+        <div className="absolute inset-0 overflow-y-auto overscroll-contain px-4 py-4" aria-live="polite">
           {turns.length === 0 && !asking ? (
             <div className="flex flex-col gap-3">
               <p className="text-sm text-muted-foreground">Ask about your applications in plain words, in English or Hebrew. For example:</p>
@@ -124,7 +126,7 @@ export function AgentChat({ initial, className }: { initial: ChatTurn[]; classNa
             {pending ? <Send className="motion-safe:animate-pulse" /> : <ArrowUp />}
           </Button>
         </form>
-        <p className="text-xs text-muted-foreground">The agent reads only. Changes come from the cards you approve in Telegram.</p>
+        <p className="text-xs text-muted-foreground">The agent only reads: it can&apos;t change your tracker.</p>
       </CardFooter>
     </Card>
   );

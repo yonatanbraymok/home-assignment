@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ChevronRight, ExternalLink, Inbox, Search } from "lucide-react";
 import type { ApplicationStatus } from "@/generated/prisma/enums";
-import { StatusBadge } from "@/components/status-badge";
+import { STATUS_DOT, StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -120,7 +120,7 @@ export function ApplicationsCard({ rows, className }: { rows: ApplicationRow[]; 
             {/* Wider screens: a table. */}
             <div className="hidden md:block">
               <Table>
-                <TableHeader className="bg-zinc-50 dark:bg-zinc-900/50">
+                <TableHeader className="bg-muted/60">
                   <TableRow>
                     <TableHead className="pl-4">Company</TableHead>
                     <TableHead>Role</TableHead>
@@ -151,7 +151,7 @@ export function ApplicationsCard({ rows, className }: { rows: ApplicationRow[]; 
                 </TableBody>
               </Table>
               <p className="border-t px-4 py-3 text-xs text-muted-foreground">
-                Open an application for its timeline: each email, the sentence the agent relied on, and your decision.
+                Open an application for its timeline (each email, the sentence the agent relied on, your decision), or to correct its status by hand.
               </p>
             </div>
           </>
@@ -162,20 +162,13 @@ export function ApplicationsCard({ rows, className }: { rows: ApplicationRow[]; 
   );
 }
 
-const SEGMENT: Record<ApplicationStatus, string> = {
-  APPLIED: "bg-zinc-300 dark:bg-zinc-600",
-  ASSESSMENT: "bg-indigo-500",
-  INTERVIEW: "bg-amber-500",
-  OFFER: "bg-emerald-500",
-  REJECTED: "bg-rose-500",
-  WITHDRAWN: "bg-zinc-200 dark:bg-zinc-700",
-};
+const SEGMENT = STATUS_DOT;
 
 /** Where the applications stand, as one bar; it sits at the bottom of the card. */
 function PipelineBar({ rows }: { rows: ApplicationRow[] }) {
   const counts = ORDER.map((s) => ({ status: s, n: rows.filter((r) => r.status === s).length })).filter((c) => c.n > 0);
   return (
-    <div className="mt-auto flex flex-col gap-2.5 border-t bg-zinc-50/60 px-4 py-3 dark:bg-zinc-900/40">
+    <div className="mt-auto flex flex-col gap-2.5 border-t bg-muted/50 px-4 py-3">
       <div className="flex h-2 overflow-hidden rounded-full" role="img" aria-label={counts.map((c) => `${STATUS_LABEL[c.status]}: ${c.n}`).join(", ")}>
         {counts.map((c) => (
           <div key={c.status} className={SEGMENT[c.status]} style={{ width: `${(c.n / rows.length) * 100}%` }} />

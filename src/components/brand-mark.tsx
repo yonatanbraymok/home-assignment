@@ -1,17 +1,11 @@
-import { APP_NAME } from "@/lib/brand";
+import { BriefcaseBusiness } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const initials = APP_NAME.split(/\s+/)
-  .map((w) => w[0])
-  .join("")
-  .slice(0, 2)
-  .toUpperCase();
-
-/** The product's mark: its initials on the accent colour. */
+/** The product's mark: a briefcase in an ink circle. */
 export function BrandMark({ className }: { className?: string }) {
   return (
-    <span aria-hidden className={cn("grid size-6 shrink-0 place-items-center rounded-md bg-primary text-[10px] font-bold tracking-tight text-primary-foreground", className)}>
-      {initials}
+    <span aria-hidden className={cn("grid size-7 shrink-0 place-items-center rounded-full bg-ink text-paper dark:bg-primary dark:text-white [&>svg]:size-[55%]", className)}>
+      <BriefcaseBusiness />
     </span>
   );
 }

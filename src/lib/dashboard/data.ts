@@ -8,7 +8,7 @@ import { budgetStatus, spendByPurpose, spendByUser, userCapUsd } from "@/lib/llm
 import { breakdownOf, forecastUsd, questionReserveUsd, scopeStatus } from "@/lib/llm/budget-policy";
 import { defaultModel } from "@/lib/llm/models";
 import { mcpTokenStatus } from "@/lib/mcp/auth";
-import { accountCountsFor, applicationDetailFor, findSessionUser, gettingStartedFor, overviewFor, recentChatFor } from "./queries";
+import { accountCountsFor, applicationDetailFor, findSessionUser, overviewFor, recentChatFor } from "./queries";
 
 // The dashboard's data access layer. Pages get data only through these functions, and each one
 // takes the user from the session cookie, never from the URL or a form.
@@ -60,13 +60,12 @@ export const getBudget = cache(async () => budgetStatus((await getCurrentUser())
 
 export async function getOverview() {
   const user = await getCurrentUser();
-  const [overview, gettingStarted, chat, budget] = await Promise.all([
+  const [overview, chat, budget] = await Promise.all([
     overviewFor(user.id),
-    gettingStartedFor(user.id),
     recentChatFor(user.id),
     getBudget(),
   ]);
-  return { user, ...overview, gettingStarted, chat, budget, forecastUsd: forecastUsd(budget.user?.spentUsd ?? 0, new Date()) };
+  return { user, ...overview, chat, budget, forecastUsd: forecastUsd(budget.user?.spentUsd ?? 0, new Date()) };
 }
 
 /** null when the application doesn't exist or belongs to someone else: the page can't tell which. */

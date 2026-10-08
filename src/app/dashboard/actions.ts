@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { answerQuestion, type ChatResult } from "@/lib/agent/chat";
 import { cleanQuestion, MAX_QUESTION_CHARS } from "@/lib/agent/question";
 import { endSession, sessionUserId } from "@/lib/auth/session";
+import { editApplicationStatus, isStatus, type EditResult } from "@/lib/dashboard/edit";
 import { findSessionUser } from "@/lib/dashboard/queries";
 import { quietly } from "@/lib/proposals/cards-io";
 import { ensureBudgetNotices } from "@/lib/telegram/budget-notices";
@@ -27,4 +28,12 @@ export async function askAgent(raw: unknown): Promise<ChatResult> {
   // After the answer, as in Telegram: a "you've used 80%" notice never arrives before it.
   await quietly("budget notices", ensureBudgetNotices({ recipients: [userId] }));
   return result;
+}
+
+/** "Change status" on an application's page. Checks the session itself, like every Server Action. */
+export async function changeStatus(applicationId: unknown, expected: unknown, next: unknown): Promise<EditResult | { kind: "signed-out" }> {
+  const userId = await sessionUserId();
+  if (!userId || !(await findSessionUser(userId))) return { kind: "signed-out" };
+  if (typeof applicationId !== "string" || !isStatus(expected) || !isStatus(next)) return { kind: "not-found" };
+  return editApplicationStatus(userId, applicationId, expected, next);
 }

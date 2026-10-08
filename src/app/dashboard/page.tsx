@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { ArrowUpRight, CircleCheck, Circle, Send, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, CircleCheck, Send, TriangleAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,9 +15,10 @@ import { cn } from "@/lib/utils";
 import { AgentChat } from "./agent-chat";
 import { ApplicationsCard, type ApplicationRow } from "./applications-table";
 import { WaitingBadge, describeChange } from "./proposal-badges";
+import { WaitingSlides } from "./waiting-slides";
 
-// The overview, as a bento grid of cards: budget and totals across the top, the pipeline on the
-// left, and on the right what waits for the owner and a chat with the agent. Read-only: approving
+// The overview, as a bento grid of cards: budget and totals beside what waits for the owner, then
+// the pipeline beside a chat with the agent. Read-only: approving
 // and rejecting stay in Telegram, so there are no buttons for them here.
 export default function DashboardPage() {
   return (
@@ -31,7 +32,7 @@ type OverviewData = Awaited<ReturnType<typeof getOverview>>;
 
 async function Overview() {
   const data = await getOverview();
-  const { user, applications, gettingStarted } = data;
+  const { user, applications } = data;
   const rows: ApplicationRow[] = applications.map((a) => ({
     id: a.id,
     company: a.company,
@@ -45,23 +46,17 @@ async function Overview() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">Applications</h1>
-        <p className="text-sm text-muted-foreground">Kept up to date from your inbox. Every change is approved by you, in Telegram.</p>
+        <p className="text-sm text-muted-foreground">Kept up to date from your inbox: the agent proposes, you approve in Telegram. Missed something? Correct it on the application.</p>
       </div>
-      <GmailNotice user={user} demo={gettingStarted.demo} />
+      <GmailNotice user={user} />
 
-      {/* Phones get one column in reading order; from lg the pipeline spans two columns and the
-          right column stacks what waits for you above the chat with the agent, which takes the rest. */}
-      <div className="grid gap-4 lg:grid-cols-3 lg:grid-rows-[auto_auto_1fr]">
-        <SummaryCard data={data} className="lg:col-span-3" />
-        <div className="flex flex-col gap-4 lg:col-start-3 lg:row-start-2">
-          <GettingStarted steps={gettingStarted} />
-          <WaitingCard waiting={data.waiting} />
-        </div>
-        <ApplicationsCard rows={rows} className="lg:col-span-2 lg:col-start-1 lg:row-span-2 lg:row-start-2" />
-        <AgentChat
-          initial={data.chat.map((t) => ({ ...t, at: t.at.toISOString() }))}
-          className="lg:col-start-3 lg:row-start-3"
-        />
+      {/* Two rows. Top: the totals, and what waits for your decision. Below: the pipeline, and the
+          chat with the agent in its own column, as tall as the pipeline. Phones: one column. */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <SummaryCard data={data} className="lg:col-span-2" />
+        <WaitingCard waiting={data.waiting} />
+        <ApplicationsCard rows={rows} className="lg:col-span-2" />
+        <AgentChat initial={data.chat.map((t) => ({ ...t, at: t.at.toISOString() }))} />
       </div>
     </div>
   );
@@ -73,9 +68,9 @@ function SummaryCard({ data, className }: { data: OverviewData; className?: stri
   const { stats } = data;
   return (
     <Card className={className}>
-      <CardContent className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+      <CardContent className="grid h-full gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-center">
         <BudgetMonitor budget={data.budget} forecastUsd={data.forecastUsd} />
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4 md:border-l md:pl-6">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4 md:border-l md:pl-6 lg:grid-cols-2">
           <Stat label="Tracked" value={stats.total} note={stats.response_rate_percent === null ? "none yet" : `${stats.response_rate_percent}% got a reply`} />
           <Stat label="In progress" value={stats.open} note={`${stats.no_reply_yet} waiting for a reply`} />
           <Stat label="Interviews" value={stats.by_status.INTERVIEW ?? 0} note={plural(stats.by_status.ASSESSMENT ?? 0, "online assessment")} />
@@ -135,62 +130,31 @@ function BudgetMonitor({ budget, forecastUsd }: { budget: OverviewData["budget"]
 
 // ---------- Right column ----------
 
-function GettingStarted({ steps }: { steps: OverviewData["gettingStarted"] }) {
-  const items = [
-    { done: steps.gmailConnected, label: "Connect Gmail", hint: "Send /connect to the bot (or /demo to use sample emails)." },
-    { done: steps.approvedSomething, label: "Approve your first card", hint: "Cards arrive in Telegram; nothing changes until you tap Approve." },
-    { done: steps.askedQuestion, label: "Ask the agent a question", hint: "Below, or in Telegram. For example: \"Which applications are waiting for a reply?\"" },
-  ];
-  if (items.every((i) => i.done)) return null;
+function WaitingCard({ waiting, className }: { waiting: OverviewData["waiting"]; className?: string }) {
+  const n = waiting.length;
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Getting started</CardTitle>
-        <CardDescription>Three steps. This card goes once they&apos;re done.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ol className="flex flex-col gap-2.5">
-          {items.map((item) => (
-            <li key={item.label} className="flex gap-2.5 text-sm">
-              {item.done ? <CircleCheck className="mt-0.5 size-4 shrink-0 text-primary" /> : <Circle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />}
-              <span>
-                <span className={item.done ? "text-muted-foreground line-through" : "font-medium"}>{item.label}</span>
-                {!item.done && <span className="block text-muted-foreground">{item.hint}</span>}
-              </span>
-            </li>
-          ))}
-        </ol>
-      </CardContent>
-      <CardFooter>
-        <TelegramButton variant="default" />
-      </CardFooter>
-    </Card>
-  );
-}
-
-const MAX_WAITING_SHOWN = 4;
-
-function WaitingCard({ waiting }: { waiting: OverviewData["waiting"] }) {
-  const more = waiting.length - MAX_WAITING_SHOWN;
-  return (
-    <Card id="waiting" className="scroll-mt-20">
+    <Card id="waiting" className={cn("scroll-mt-20", className)}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           Waiting for your approval
-          {waiting.length > 0 && <Badge className="tabular-nums">{waiting.length}</Badge>}
+          {n > 0 && <Badge className="tabular-nums">{n}</Badge>}
         </CardTitle>
-        <CardDescription>The agent&apos;s proposals. Only you can approve them, in Telegram: nothing changes until you do.</CardDescription>
+        <CardDescription>
+          {n === 0
+            ? "The agent's proposals appear here until you decide on them in Telegram."
+            : `${n === 1 ? "1 card is" : `${n} cards are`} waiting in Telegram. Nothing changes until you approve.`}
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        {waiting.length === 0 ? (
+        {n === 0 ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CircleCheck className="size-4 text-emerald-600 dark:text-emerald-400" />
+            <CircleCheck className="size-4 text-primary" />
             Nothing is waiting for you.
           </p>
         ) : (
-          <ul className="flex flex-col divide-y">
-            {waiting.slice(0, MAX_WAITING_SHOWN).map((p) => (
-              <li key={p.id} className="flex flex-col gap-1.5 py-3 first:pt-0 last:pb-0">
+          <WaitingSlides
+            slides={waiting.map((p) => (
+              <div key={p.id} className="flex flex-col gap-1.5 pr-px">
                 <div className="flex items-baseline justify-between gap-2">
                   <p className="truncate font-medium">
                     {p.applicationId ? (
@@ -209,13 +173,12 @@ function WaitingCard({ waiting }: { waiting: OverviewData["waiting"] }) {
                 </p>
                 <blockquote className="line-clamp-2 border-l-2 border-primary/60 pl-2.5 text-sm">“{p.evidenceQuote}”</blockquote>
                 <WaitingBadge proposal={p} />
-              </li>
+              </div>
             ))}
-          </ul>
+          />
         )}
-        {more > 0 && <p className="mt-3 text-xs text-muted-foreground">And {more} more: /pending in Telegram shows them all.</p>}
       </CardContent>
-      {waiting.length > 0 && (
+      {n > 0 && (
         <CardFooter>
           <TelegramButton variant="outline" />
         </CardFooter>
@@ -236,8 +199,8 @@ function TelegramButton({ variant }: { variant: "default" | "outline" }) {
   );
 }
 
-function GmailNotice({ user, demo }: { user: CurrentUser; demo: boolean }) {
-  if (demo) {
+function GmailNotice({ user }: { user: CurrentUser }) {
+  if (user.demo) {
     return (
       <Alert>
         <AlertTitle>Demo mode</AlertTitle>

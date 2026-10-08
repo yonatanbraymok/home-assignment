@@ -19,7 +19,7 @@ export default function DashboardLayout({ children }: LayoutProps<"/dashboard">)
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-10 border-b bg-background">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-          <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
+          <Link href="/dashboard" className="flex items-center gap-2.5 font-heading text-[1.05rem] font-bold tracking-tight">
             <BrandMark />
             {APP_NAME}
           </Link>
@@ -46,8 +46,8 @@ export default function DashboardLayout({ children }: LayoutProps<"/dashboard">)
           </div>
         </div>
       </header>
-      {/* Cards sit on a zinc-50 work area. */}
-      <div className="flex-1 bg-zinc-50 dark:bg-background">
+      {/* White cards on the lavender paper. */}
+      <div className="flex-1 bg-background">
         <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:py-8">
           {/* On phones the budget gets its own row under the header. */}
           <Suspense fallback={null}>

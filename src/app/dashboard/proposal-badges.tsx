@@ -40,7 +40,7 @@ export function WaitingBadge({ proposal: p }: { proposal: ProposalView }) {
           ? "Awaiting your choice in Telegram"
           : "Awaiting your approval in Telegram";
   return (
-    <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950 dark:text-indigo-300">
+    <Badge variant="outline" className="border-brand/20 bg-tint text-brand-dark dark:border-brand/40 dark:bg-brand/20 dark:text-[#7cc4ec]">
       <Send data-icon="inline-start" />
       {text}
     </Badge>

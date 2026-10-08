@@ -1,22 +1,42 @@
-import { redeemLoginLink } from "@/lib/auth/login";
+import { checkLoginLink, redeemLoginLink } from "@/lib/auth/login";
 import { sessionUserId, startSession } from "@/lib/auth/session";
 import { appUrl } from "@/lib/env";
 
-// Entry point of the link the bot sends on /dashboard: ?t=<signed user id, 10 min, works once>.
+// The link the bot sends on /dashboard: ?t=<signed user id, 10 min, works once>.
+//
+// Opening it (GET) signs nobody in: it leads to /sign-in, which shows whose account the link opens
+// and asks to continue. Only that page's button (POST, same site only) uses the link. So someone
+// can't send you a link to *their* account and have your dashboard edits land in their tracker,
+// and a preview crawler that opens the link can't use it up.
+
 export async function GET(req: Request) {
-  const result = await redeemLoginLink(new URL(req.url).searchParams.get("t"));
+  const token = new URL(req.url).searchParams.get("t");
+  const link = await checkLoginLink(token);
+  // Already signed in with this account in this browser: carry on.
+  if (link.status !== "expired" && (await sessionUserId()) === link.userId) return redirectTo("/dashboard");
+  if (link.status === "valid") return redirectTo(`/sign-in?t=${encodeURIComponent(token!)}`);
+  return redirectTo(`/?login=${link.status}`);
+}
+
+export async function POST(req: Request) {
+  // A form posted from another site would carry its own Origin: refused.
+  const origin = req.headers.get("origin");
+  if (!origin || (origin !== new URL(req.url).origin && origin !== new URL(appUrl()).origin)) {
+    return new Response("Sign in from the link the bot sent you.", { status: 403 });
+  }
+  const token = (await req.formData()).get("t");
+  const result = await redeemLoginLink(typeof token === "string" ? token : null);
   if (result.status === "ok") {
     await startSession(result.userId);
     return redirectTo("/dashboard");
   }
-  // The same link loaded twice by one browser: the first load already signed it in, so carry on
-  // instead of showing "already used".
+  // The same link confirmed twice by one browser: the first already signed it in.
   if (result.status === "used" && (await sessionUserId()) === result.userId) return redirectTo("/dashboard");
   return redirectTo(`/?login=${result.status}`);
 }
 
-// Next answers HEAD by running GET, which would use the link up. Link checkers and some preview
-// services send HEAD first; they get an empty answer and the link stays unused.
+// Next answers HEAD by running GET. GET no longer uses a link, but link checkers still get an
+// empty answer, with nothing looked up.
 export function HEAD() {
   return new Response(null, { status: 200, headers: { "Cache-Control": "no-store" } });
 }
@@ -26,7 +46,7 @@ function redirectTo(path: string): Response {
     status: 303,
     headers: {
       Location: appUrl(path),
-      "Cache-Control": "no-store", // it sets a session cookie
+      "Cache-Control": "no-store", // it may set a session cookie
       "Referrer-Policy": "no-referrer", // keeps the link out of the next request's Referer
     },
   });

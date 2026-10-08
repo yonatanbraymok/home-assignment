@@ -9,9 +9,19 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans); /* set by next/font in layout.tsx */
+  --font-sans: var(--font-dm-sans); /* set by next/font in layout.tsx */
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-grotesk);
+  /* The palette by name, for the few places that need it outright (landing page, badges).
+     Zinc base, one blue for actions (#0085CC, darker on hover), a light blue to highlight. */
+  --color-paper: #ffffff;
+  --color-ink: #18181b;
+  --color-brand: #0085cc;
+  --color-brand-dark: #0073b3;
+  --color-highlight: #cdeafa;
+  --color-tint: #e6f3fb;
+  --color-night: #18181b;
+  --color-night-card: #27272a;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -51,75 +61,70 @@
 }
 
 :root {
-  /* Zinc neutrals (white, zinc-50/100 areas, zinc-200 borders, zinc-900 text) and one accent. */
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.21 0.006 285.885);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.006 285.885);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.006 285.885);
-  /* The one accent colour (buttons, links, active states): indigo-600. Change it here. */
-  --primary: oklch(0.511 0.262 276.966);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.586 0.253 17.585);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.585 0.233 277.117);
-  --chart-1: oklch(0.871 0.006 286.286);
-  --chart-2: oklch(0.552 0.016 285.938);
-  --chart-3: oklch(0.442 0.017 285.786);
-  --chart-4: oklch(0.37 0.013 285.805);
-  --chart-5: oklch(0.274 0.006 286.033);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.21 0.006 285.885);
-  --sidebar-primary: oklch(0.511 0.262 276.966);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.967 0.001 286.375);
-  --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.585 0.233 277.117);
+  /* Zinc base: white page, zinc-50 cards, zinc-200 borders, zinc-900 text, zinc-500 secondary
+     text. The one action colour is #0085CC (hover #0073B3). */
+  --background: #ffffff;
+  --foreground: #18181b;
+  --card: #fafafa;
+  --card-foreground: #18181b;
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+  --primary: #0085cc;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
+  --destructive: #e11d48;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #0085cc;
+  --chart-1: #0085cc;
+  --chart-2: #71717a;
+  --chart-3: #a1a1aa;
+  --chart-4: #3f3f46;
+  --chart-5: #18181b;
+  --radius: 0.875rem;
+  --sidebar: #fafafa;
+  --sidebar-foreground: #18181b;
+  --sidebar-primary: #0085cc;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f4f4f5;
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: #e4e4e7;
+  --sidebar-ring: #0085cc;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: oklch(0.141 0.005 285.823);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.21 0.006 285.885);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.21 0.006 285.885);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.585 0.233 277.117);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.274 0.006 286.033);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.274 0.006 286.033);
-    --muted-foreground: oklch(0.705 0.015 286.067);
-    --accent: oklch(0.274 0.006 286.033);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.645 0.246 16.439);
-    --border: oklch(0.274 0.006 286.033);
-    --input: oklch(0.37 0.013 285.805);
-    --ring: oklch(0.673 0.182 276.935);
-    --chart-1: oklch(0.871 0.006 286.286);
-    --chart-2: oklch(0.552 0.016 285.938);
-    --chart-3: oklch(0.442 0.017 285.786);
-    --chart-4: oklch(0.37 0.013 285.805);
-    --chart-5: oklch(0.274 0.006 286.033);
-    --sidebar: oklch(0.21 0.006 285.885);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.585 0.233 277.117);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.274 0.006 286.033);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(0.274 0.006 286.033);
-    --sidebar-ring: oklch(0.673 0.182 276.935);
+    --background: #09090b;
+    --foreground: #fafafa;
+    --card: #18181b;
+    --card-foreground: #fafafa;
+    --popover: #18181b;
+    --popover-foreground: #fafafa;
+    --primary: #0085cc;
+    --primary-foreground: #ffffff;
+    --secondary: #27272a;
+    --secondary-foreground: #fafafa;
+    --muted: #27272a;
+    --muted-foreground: #a1a1aa;
+    --accent: #27272a;
+    --accent-foreground: #fafafa;
+    --destructive: #fb7185;
+    --border: #27272a;
+    --input: #3f3f46;
+    --ring: #38a9e6;
+    --sidebar: #18181b;
+    --sidebar-foreground: #fafafa;
+    --sidebar-primary: #0085cc;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #27272a;
+    --sidebar-accent-foreground: #fafafa;
+    --sidebar-border: #27272a;
+    --sidebar-ring: #38a9e6;
   }
 }
 
@@ -133,9 +138,34 @@
   html {
     @apply font-sans;
   }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.02em;
+  }
+  ::selection {
+    background: var(--color-highlight);
+    color: var(--color-ink);
+  }
   @media (prefers-reduced-motion: no-preference) {
     html {
       scroll-behavior: smooth;
     }
   }
+}
+
+/* The landing page's dark section: a faint grid on zinc-900. */
+.grid-bg {
+  background-color: var(--color-night);
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+
+/* Fades a row out at both ends (the hero's fan of cards). */
+.edge-fade {
+  mask-image: linear-gradient(to right, transparent, #000 18%, #000 82%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 18%, #000 82%, transparent);
 }

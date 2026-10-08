@@ -19,11 +19,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  // A form posted from another site would carry its own Origin: refused.
-  const origin = req.headers.get("origin");
-  if (!origin || (origin !== new URL(req.url).origin && origin !== new URL(appUrl()).origin)) {
-    return new Response("Sign in from the link the bot sent you.", { status: 403 });
-  }
+  if (!fromThisSite(req)) return new Response("Sign in from the link the bot sent you.", { status: 403 });
   const token = (await req.formData()).get("t");
   const result = await redeemLoginLink(typeof token === "string" ? token : null);
   if (result.status === "ok") {
@@ -33,6 +29,17 @@ export async function POST(req: Request) {
   // The same link confirmed twice by one browser: the first already signed it in.
   if (result.status === "used" && (await sessionUserId()) === result.userId) return redirectTo("/dashboard");
   return redirectTo(`/?login=${result.status}`);
+}
+
+/**
+ * The Continue button on our own /sign-in page, not a form on another site. The Origin header says
+ * so; some in-app browsers send `Origin: null` instead, and then the browser's own Sec-Fetch-Site
+ * header (which pages can't set) must say same-origin. A post from another site fails both.
+ */
+function fromThisSite(req: Request): boolean {
+  const origin = req.headers.get("origin");
+  if (origin && origin !== "null") return origin === new URL(req.url).origin || origin === new URL(appUrl()).origin;
+  return req.headers.get("sec-fetch-site") === "same-origin";
 }
 
 // Next answers HEAD by running GET. GET no longer uses a link, but link checkers still get an

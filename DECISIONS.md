@@ -1,314 +1,244 @@
-# DECISIONS — Job Hunt Tracker
+# DECISIONS: Job Hunt Tracker
 
-> How the agent was built and why. Deployment steps, environment variables and the reviewer's quick start are in the README.
+How the agent was built, and why. How to try it, deploy it and configure it is in the [README](README.md).
+
+**Contents:**
+1. [Who uses it](#1-who-uses-it-and-what-it-makes-easier)
+2. [Why an agent](#2-why-an-agent-is-the-right-tool)
+3. [How each requirement is met](#3-how-each-requirement-is-met)
+4. [Stack](#4-stack-and-why)
+5. [Assumptions](#5-assumptions)
+6. [Cost](#6-cost-measured)
+7. [Budget](#7-budget-never-over-silently)
+8. [MCP](#8-mcp-what-other-agents-can-do)
+9. [Build log](#9-build-log-what-i-did-in-each-step)
+10. [Where AI helped and was wrong](#10-where-ai-helped-and-where-it-was-wrong)
+11. [Evals](#11-evals)
+12. [Understanding questions](#12-understanding-questions)
 
 ## 1. Who uses it and what it makes easier
 
-**User:** a computer-science student applying to tech internships (Microsoft, Google, local startups) during recruiting season. They run dozens of applications in parallel. Updates arrive by email from many senders: company domains, applicant-tracking systems (Greenhouse, Workday, Lever, Ashby) and assessment platforms (HackerRank, Codility). They arrive in English and Hebrew and in no fixed format.
+**Who:** anyone in the middle of a job search. Job hunting is a long, tiring process, and keeping track of every application, rejection and interview invitation is a job of its own. Instead of a messy spreadsheet, the bot works as a personal assistant: it reads your inbox for application updates and keeps your pipeline current, so you can focus on the interviews while it does the data entry.
 
-<!-- TODO(me): one or two sentences from my own search: how many applications, what I used before (spreadsheet? nothing?), what went wrong. -->
+**What it makes easier:** you no longer need to keep refreshing your inbox or worry about missing an update. Personal inboxes fill up with newsletters and promotions, and an interview invitation is easy to lose among them. The bot sends each update to your private Telegram chat, organised and with a link to the original email. It's also an assistant you can ask: "When is my interview?" or "What is the home assignment about?" It answers from the emails themselves.
 
-**What it makes easier:** the student stops keeping a spreadsheet by hand. The agent reads their inbox, recognises application confirmations, online-assessment invites, interview invites, rejections and offers, and proposes the matching status change in Telegram with the exact sentence that justifies it. One tap keeps the tracker correct. They can also just ask "what's still open?" or "what happened with Google?" and get an answer that points to the email it came from.
+## 2. Why an agent is the right tool
 
-## 2. Why an agent is the right tool (and where it isn't)
+- **The input is unstructured language, and rules break on it.**
+  - "We'll keep your resume on file" is a rejection.
+  - "Unfortunately we need to reschedule your interview" is not.
+  - A Workday email comes from `myworkday.com`, and the company is named only in the body.
 
-- **The input is unstructured language, and rules break on it.** "We'll keep your resume on file" is a rejection. "Unfortunately we need to reschedule your interview" is not, even though it contains "unfortunately". A Workday email comes from `myworkday.com`, and the company is named only in the body. Gmail filters and keyword rules can't tell these apart; a language model can, and it can explain why.
-- **The output needs judgment and an explanation.** The model has to map the email to the right application among several (two Microsoft roles), say why it thinks the status changed, and say how sure it is.
-- **The risky part is deliberately not left to the model.** The model only *proposes*. Deterministic code checks its evidence: the quoted sentence must appear verbatim in the email, the company match is scored by rules, and the confidence is capped by those checks. The database changes only after the owner taps Approve. The model has no write tools at all.
-- **Where I don't use an LLM:** counting and stats are plain SQL, approvals are plain code, and a free keyword/domain prefilter decides which emails are worth a model call at all. This keeps answers exact and costs low.
+  Keyword rules can't tell these apart; a language model can, and it can explain why.
+- **The output needs judgment and an explanation:** which of several applications an email belongs to, why the status changed, and how sure it is.
+- **The risky part is not left to the model.**
+  - The model only *proposes*.
+  - Code checks the evidence: the quoted sentence must appear verbatim in the email, matching is done by rules, and confidence is capped by those checks.
+  - The tracker changes only after the owner taps Approve. The model has no write tools.
+- **Where there's no LLM:**
+  - Counts and stats are SQL, and approvals are plain code.
+  - A free keyword and domain prefilter decides which emails are worth a model call at all.
 
-## 3. Assumptions
+## 3. How each requirement is met
+
+| Requirement | How |
+|---|---|
+| **1. Grounded answers** | Every proposal points to a stored email, and its quote is checked word for word in code. Chat answers come only from read-only tools, cite company and email subject and date, and say so when the data can't answer. A quote the tools didn't return is removed. |
+| **2. Reasoning, not just fetching** | Each card says *why*, quotes the evidence and states a confidence. Code lowers the confidence when the company match is weak or the wording disagrees. In chat, inferences are labelled as inferences, with a confidence. |
+| **3. Action with approval** | The action: create or update an application. It runs only on a Telegram tap by the tracker's owner, as one transaction that first checks the application hasn't changed since the card was made. The approver sees the change, the reason, the verbatim quote, the sender, the date, the confidence, any warnings and a link to the email. |
+| **4. Channel** | Telegram, plus a web dashboard. Both have a chat with the same agent, sharing one conversation. The dashboard shows the pipeline and the evidence behind every status. |
+| **5. MCP** | Two read-only tools for other agents: `list_applications` and `generate_prep_brief`. Who can trigger the action through MCP: **no one** (§8). |
+| **6. Budget** | $5 of AI per person and $25 shared, checked before every model call, with notices at 80% and when used up (§6, §7). |
+
+## 4. Stack and why
+
+| Choice | Why |
+|---|---|
+| **Next.js 16 on Vercel** | One deploy hosts the website, the Telegram webhook, the sync endpoint, the MCP endpoint and the Google callback. |
+| **Supabase Postgres** | Managed Postgres on a free tier, plus `pg_cron` to run the sync every 5 minutes (Vercel's free cron runs once a day). |
+| **Prisma 7** | Typed models, migrations and transactions. |
+| **Gemini Flash-Lite** | Cheap, structured JSON output, handles Hebrew. It's on the paid tier, so inbox content isn't used for training. |
+| **Telegram (grammY)** | Free, and inline buttons are a natural "approve this exact change" interface. Slack would need a workspace for every tester. |
+| **Gmail API, read-only scope** | Least privilege: the agent can never send, delete or change mail. |
+| **MCP TypeScript SDK** | The official SDK. Stateless HTTP fits serverless hosting. |
+
+## 5. Assumptions
 
 The brief allows one question; everything else is an assumption, written down here.
 
 | # | Assumption | Why |
 |---|---|---|
-| A1 | "A team of 5, 20 uses/day each" = 5 students, each with their own Gmail and Telegram | Matches the target user; each tracker is personal |
-| A2 | The "real action" is creating or updating an application record after approval | The brief lists "update a record" as an example action |
-| A3 | One Telegram account = one user; the bot answers in private chats only | Approvals must be tied to one owner |
-| A4 | On first connect, the agent backfills the last 60 days of email | Covers the current season without a huge first bill |
-| A5 | The chat remembers only the last 3 questions and answers from the last 30 minutes | Enough for follow-ups ("and which of them are open?") without carrying old context into new questions; history is read from the audit log, ordered by id |
-| A6 | Unanswered proposals expire 7 days after their card is shown | A week-old proposal may no longer reflect the inbox. Counting from when it's shown means a card waiting in the past-email review (A15) doesn't expire unseen. |
-| A7 | Statuses: Applied, Assessment, Interview, Offer, Rejected, Withdrawn | Online assessments are a distinct, common stage for CS internships |
-| A8 | Testers connect their own Gmail and approve in their own Telegram chat. Without a Gmail to spare, `/demo` loads a sample inbox into their own account instead (A19) | Exercises the real flow end to end; the demo is a convenience, not a requirement |
-| A9 | Applications the agent hasn't seen before are *proposed*, not auto-created | Keeps one rule everywhere: the agent never writes without a tap |
-| A10 | The agent's changes go only through cards approved in Telegram. The owner can also correct a status by hand on an application's page in the dashboard: only from the status the page showed, recorded in the audit log and on the timeline as "Changed by you". A card still waiting for that application then doesn't apply. The agent and MCP clients still can't change anything. | If the agent misses an email (or none ever comes), the tracker would otherwise stay wrong with no way out. A hand edit is the human's own action, not the agent's, so it needs no card; requirement 3 is about the agent's actions. |
-| A11 | A job ID only counts if the email labels it as a job/requisition/posting ID and it appears verbatim. Without one, same company + same title is one application; when several applications fit, the card asks the user which one | Companies like Amazon have several applications per student, often with identical titles; guessing would silently update the wrong one |
-| A13 | A confirmation ("we received your application") never moves an existing application. It's the same application only if the job ID matches, or if a same-title application hasn't had any reply yet; otherwise it's a new application. A test/interview/offer email that matches a *rejected or withdrawn* application asks "which application is this?" (that one, or a new one) unless a job ID proves it's the same job. In the database: only one same-title application can be waiting for a first reply at a time. | Students re-apply and apply to several same-title postings. Before a reply there's no way to tell same-title applications apart; after one, a new confirmation can only mean a new application. |
-| A14 | Two data rights, each confirmed with a button that only the account owner can use and that expires after 10 minutes. `/disconnect` revokes Gmail access at Google and deletes the token but keeps the tracker. `/delete_my_data` erases applications, emails, cards, chat history, the audit trail and the registration. Cost rows stay without a user (they hold no content and keep the budget honest), and one anonymous "account deleted" record notes that it happened. Messages already in the Telegram chat stay, because bots can't delete their messages after 48 hours. | Testers and real users connect a real inbox; they need a way to stop and a way to leave that doesn't depend on me |
-| A15 | Emails from before Gmail was connected don't each push a card. The agent reads all of them first, sends one summary ("12 updates from 9 companies"), then shows one card at a time, grouped by company, with "⏭ Later" to move a card to the end. New emails still get a card right away. There is no "approve all": every card is still its own tap. | A 60-day backfill produced a wall of cards on the first sync (found by the user). Requirement 3 asks for approval of each specific action, so the fix is in delivery, not approval. Waiting until everything is read also turns a confirmation followed by a rejection into one card. |
-| A16 | The dashboard has no password: Telegram is the identity. `/dashboard` sends a link that signs you in once, within 10 minutes, after a "Continue as <name>" page (6b). The session cookie lasts 7 days (fixed) and holds the internal user id, so `/delete_my_data` ends it. There's no "log out of all devices" yet. The dashboard is read-only for now; approving stays in Telegram (A10). | Whoever controls the Telegram account can already approve cards, so a link from the bot doesn't lower the bar, and there are no passwords to store or reset. It works on localhost, unlike Telegram's login widget. On phones Telegram often opens links in its own browser, which may not keep the cookie, so `/dashboard` is the way back in. |
-| A17 | Each person has a $5 monthly AI allowance, and everyone shares a $25 cap (§7). Registration stays open: anyone can `/start` the bot | The brief's $50 for 5 people is $10 each, hosting included. Open registration lets reviewers try it without setup; the shared cap protects the total however many people join, and the per-person cap keeps one account from using everyone's budget. |
-| A18 | The inbox is checked every 5 minutes (Supabase `pg_cron`), reading up to 25 new job emails per person per run; `/sync` checks at once | Fresh enough for replies that need a quick answer (book a slot, a 48-hour assessment) and for testers. Every minute would overlap runs and use far more of the free hosting plan, whose overrun pauses the app; AI cost doesn't change with the frequency, since each email is read once. Real-time Gmail push (Pub/Sub) is the next step if minutes ever matter. |
-| A19 | `/demo` (or the landing page's "Try it with sample emails", a `t.me/<bot>?start=demo` link) loads 11 fictional emails from `.example` domains into the tester's own account, only while no Gmail is connected. The real agent reads them: same prefilter, AI, quote check, matching, review and cards. `/demo_email` makes the next of five scripted emails arrive "now", so a live card pops up; `/demo_reset` deletes the samples and what they created; connecting Gmail ends the demo first. Sample emails have no Gmail link. | Lets a reviewer see every path (review, live card, job-ID match, "which application?", rejection, offer, MCP brief) in two minutes without exposing an inbox. Sample and real email never mix. Each run costs about $0.01 of the tester's own allowance. |
-| A20 | The dashboard has its own chat with the agent, in place of a "recent activity" list. It's the same agent as in Telegram (same read-only tools, quote checks, budget and daily limit) and one conversation: a follow-up in either place continues the other, and each answer records where it was asked. The dashboard still can't approve anything. | The brief asks that users *talk to the agent* in Telegram + a GUI; a read-only dashboard alone was a GUI you couldn't talk to. A recent-activity list repeated what the pipeline and the timeline already show. |
-| A12 | The chat answers only about tracked applications (emails in the connected inbox since the backfill start), and says so when asked about anything else | It can't know about applications that never produced an email there |
-
-## 4. Stack and why
-
-| Choice | Why | Alternative considered |
-|---|---|---|
-| **Next.js 16 (App Router) on Vercel** | One deploy hosts the Telegram webhook, cron endpoint, MCP endpoint, OAuth callback and dashboard | Separate bot server + frontend: more moving parts for a 24h build |
-| **Supabase Postgres** | Managed Postgres with a free tier, plus `pg_cron` to schedule the sync every 5 minutes (Vercel Hobby cron runs at most once a day) | Vercel Postgres/Neon: no built-in scheduler |
-| **Prisma 7** (pinned 7.10.0) | Typed models and migrations; the schema doubles as documentation | Supabase JS client: less type safety for transactions |
-| **Gemini Flash-Lite** | Cheap, supports structured JSON output, handles Hebrew; paid tier so inbox content is not used for training | Larger models: unnecessary for classification of short emails |
-| **Telegram (grammY)** | Free; inline keyboard buttons are a natural "approve this exact action" UI | Slack: needs a workspace for every tester |
-| **Gmail API, `gmail.readonly`** | Least privilege: the agent can never send, delete or modify mail | `gmail.modify` (for labels): more power than v1 needs |
-| **MCP TypeScript SDK** | Official SDK; stateless Streamable HTTP fits serverless | — |
-
-## 5. How each requirement is met
-
-| Requirement | Implementation |
-|---|---|
-| 1. Grounded | Every proposal must reference a stored email. The quoted evidence is verified verbatim in code, and chat answers cite company + email subject/date. If the data has nothing relevant, the bot says so. |
-| 2. Reasoning | Each proposal carries "why" + evidence + confidence. Code caps the model's confidence when the company match is weak or the keyword check disagrees, and inferences are labelled as such. |
-| 3. Action with approval | Status update / record creation runs only from an owner-verified Telegram tap, in one transaction, with a check that the application hasn't changed since the proposal. |
-| 4. Channel | Users talk to the agent in two places: the Telegram bot, and a chat in the Next.js dashboard (signed in through the bot). Both run the same agent and share one conversation. Approving stays in Telegram (A20). |
-| 5. MCP | Two tools other agents can use: `list_applications` (data, no AI cost) and `generate_prep_brief` (our agent's grounded reasoning). Per-user token, read-only by construction, and nobody can trigger the action through it; see §8. |
-| 6. Budget | See §6–7 |
+| A1 | "5 people, 20 uses a day each" means 5 job seekers, each with their own Gmail and Telegram. | Each tracker is personal. |
+| A2 | The real action is creating or updating an application record. | The brief lists "update a record". |
+| A3 | One Telegram account is one user; the bot answers in private chats only. | Approvals belong to one owner. |
+| A4 | The first sync reads the last 60 days of email. | Covers the current season without a large first bill. |
+| A5 | Statuses: Applied, Assessment, Interview, Offer, Rejected, Withdrawn. | Online assessments are a distinct, common stage. |
+| A6 | An unanswered card expires 7 days after it's shown. | Old cards may no longer match the inbox. |
+| A7 | New applications are proposed, never created silently. | One rule everywhere: nothing changes without a tap. |
+| A8 | A job ID counts only if it appears verbatim. Without one, the same company and title is one application. When several fit, the card asks which one. | Guessing would update the wrong application. |
+| A9 | A confirmation never moves an existing application, and a closed application reopens only if the user chooses it. Only one same-title application can wait for a first reply. | Students re-apply, and apply to several same-title postings. |
+| A10 | Past emails are read first, then one summary, then one card at a time with ⏭ Later. New emails still get a card right away. There is no "approve all". | A first sync otherwise floods the chat; every change still gets its own tap. |
+| A11 | The owner can correct a status by hand on the dashboard. It's recorded as "Changed by you", and a card still waiting for that application no longer applies. | A missed email shouldn't leave an application stuck. It's the human's own change, not the agent's. |
+| A12 | The dashboard has no password: `/dashboard` sends a single-use link (10 minutes), which asks "Continue as <name>" before signing in. A session lasts 7 days. | Whoever holds the Telegram account can already approve. The confirmation stops someone from sending you a link to *their* account. |
+| A13 | Two data rights, each confirmed by an owner-only button: `/disconnect` (stop reading Gmail, keep the tracker) and `/delete_my_data` (erase everything). | Testers connect a real inbox; they need a way out that doesn't depend on me. |
+| A14 | Gmail is checked every 5 minutes, up to 25 job emails per person per run; `/sync` checks now. | Fresh enough for time-sensitive replies, without overlapping runs. |
+| A15 | `/demo` loads 11 fictional emails into the tester's own account, but only when no Gmail is connected. The real agent reads them; `/demo_email` simulates a new one, `/demo_reset` removes them. | A reviewer can see every path in two minutes without exposing an inbox. |
+| A16 | The chat answers only about tracked applications, and says so otherwise. | It can't know about applications that never sent an email. |
 
 ## 6. Cost (measured)
 
-Prices: Gemini API pricing page, checked 2026-10-07. `gemini-3.5-flash-lite` (the default) costs $0.30 per 1M input tokens and $2.50 per 1M output tokens; thinking tokens are billed as output. `gemini-3.1-flash-lite` costs $0.25 / $1.50.
+Gemini prices, checked 2026-10-07: `gemini-3.5-flash-lite` (the default) costs $0.30 per 1M input tokens and $2.50 per 1M output tokens; `gemini-3.1-flash-lite` costs $0.25 and $1.50. Every model call's real token counts are recorded in the `LlmUsage` table. Measured:
+- **Reading one job email:** about 740 tokens in and 100 out, **$0.00047**.
+- **One chat question:** 2–3 model calls, about **$0.0013** typical and **$0.0075** heavy.
 
-Measured from the `LlmUsage` table, which records the exact token counts the API reports for every call:
-- Reading one job email: 740 tokens in, 100 out, **$0.00047**.
-- One chat model call: $0.00051 on average, $0.0015 at most. A question takes 2–3 calls (the chat eval: 13 calls for 6 questions), so about **$0.0013** typical and **$0.0075** heavy.
-
-The brief allows under $50 a month for 5 people at 20 uses a day. Each account is one person, so that's **$10 per person per month for 600 uses** (20 × 30 days; the brief says working days, about 440, so 600 is the cautious figure).
+The brief's budget is $50 a month for 5 people at 20 uses a day. Per person that's **$10 a month for 600 uses** (20 × 30 days, more than the brief's working days).
 
 | Per person per month | Typical | Heavy |
 |---|---|---|
 | Chat, if all 600 uses are questions | $0.78 | $4.50 |
-| Reading job emails (6 a day typical, 60 heavy) | $0.09 | $0.85 |
-| First month only: reading 60 days of past email | $0.17 | $1.70 |
-| Hosting share (Vercel Hobby + Supabase Free; $4 if we ever move to Vercel Pro) | $0 | $4 |
+| Reading job emails (6 a day / 60 a day) | $0.09 | $0.85 |
+| First month only: 60 days of past email | $0.17 | $1.70 |
+| Hosting share (Vercel Hobby + Supabase Free; $4 on Vercel Pro) | $0 | $4 |
 | **Total** | **≈ $1** | **≈ $7–11** |
 
-Typical use is about 10% of the $10. Only the combined extreme (every question heavy, a paid hosting plan, and the first month) could go over, which is why each person also has a hard cap (§7).
+Typical use is about 10% of the budget. Only every extreme at once could go over, which is why there are hard caps (§7). Telegram, Gmail and Google sign-in cost nothing.
 
-Telegram Bot API, Gmail API and Google OAuth cost nothing. The ≤ $45 total in §7 assumes Supabase stays on the Free plan.
+## 7. Budget: never over silently
 
-## 7. Budget: two hard caps, and what happens near them
+**Two caps, checked before every model call.** A call runs only if its worst-case cost fits under both.
+- **Each person: $5 a month.** With up to $4 each for hosting, that stays under $10 per person.
+- **Shared: $25 a month** for everyone, evals included. With hosting at most $20, the total stays under $45, however many people sign up.
 
-**Two caps, both checked before every AI call.**
-- **Each person: $5 a month** (`LLM_USER_MONTHLY_BUDGET_USD`). With up to $4 each for hosting, that stays under the $10 per person.
-- **Shared: $25 a month** (`LLM_MONTHLY_BUDGET_USD`) for everyone, evals included. With hosting at most $20, the total stays under $45 whatever the usage or the number of users.
-- A month is the UTC calendar month; budgets reset at 02:00–03:00 Israel time on the 1st.
+**What happens as a budget fills up.** Both caps are calendar months (UTC).
 
-**Levels, for each cap.** The worse of the two applies.
-- **ok** below 80%.
-- **low** from 80%.
-- **used up** once one more whole question might not fit: spend + $0.045 (the worst case of a question: 6 calls at 8k tokens in and 2,048 out) > cap. Spend never actually reaches 100%, because a call only runs if its worst case fits; this rule makes chat and email reading stop at the same moment, and a question is never cut off halfway. Up to about 1% of an allowance stays unused.
-
-| Budget | At | Who is told (once a month) | Until the 1st |
+| Level | When | What changes until the 1st | Who is told |
 |---|---|---|---|
-| Shared | 50% | the admin | nothing changes |
-| A person's | 80% | that person | up to 20 questions a day (instead of 40); emails are read with the lighter model |
-| Shared | 80% | the admin and every user | the same, for everyone |
-| A person's | used up | that person | no questions, no new emails read; emails wait unread and are read after the reset |
-| Shared | used up | the admin and every user | the same, for everyone |
+| ok | below 80% | nothing | – |
+| low | from 80% | questions drop from 40 to 20 a day; emails are read with the lighter model | the person (their cap) or everyone (the shared cap); the admin also at 50% |
+| used up | when one more whole question might not fit | no questions and no new emails read; emails wait and are read after the reset | the same |
 
-`/status`, `/pending`, approving cards and the dashboard never need the AI, so they keep working at every level.
+- **"Used up" means a question no longer fits.** Spend never reaches 100%, because each call must fit first. So the trigger is the worst case of a whole question ($0.045): a question is never cut off halfway, and chat and email reading stop together.
+- **The lighter model is used for emails only.** It passed the classifier eval (24/24) but not the chat eval (11/12), so chat keeps the default model.
+- **What keeps working:** `/status`, `/pending`, approving cards and the dashboard need no AI, so they work at every level.
+- **Never silent:**
+  - a Telegram message at each threshold;
+  - every refused question and every `/sync` says whose budget is used up, and until when;
+  - `/status` and the dashboard show the spend, where it went, and a month-end forecast.
+- **Known limits:**
+  - two calls at the same moment can overshoot a cap by cents;
+  - our costs are our own count of tokens, not Google's bill. A $25 billing alert in Google Cloud is the outer safety net.
 
-**The lighter model must pass the same evals.** `gemini-3.1-flash-lite` passed the classifier eval (24/24) but not the chat eval (11/12: once it gave a count without naming its source). So only email reading switches; chat keeps the default model and is limited to 20 questions a day instead.
+## 8. MCP: what other agents can do
 
-**Dropped from the first plan: "pause backfills at 80%".** Reading past emails after newer ones the user may already have approved produces wrong cards (a bogus "new application" or "which application?"). Reading 60 days of past email costs at most $0.17–$1.70 per person, and the caps already bound it.
+**Who uses it:** the user's own AI assistant (Claude, Cursor, a calendar agent), with a token the user creates in the dashboard. Example: a calendar agent sees "Wix interview tomorrow" and asks our agent for a brief.
 
-**Never over budget silently.**
-- A Telegram message at each threshold.
-- Every refused question and every `/sync` says whose budget, and until when.
-- `/status` shows this month's spend.
-- The dashboard's overview shows your allowance, its state (on track, limited or paused, until when) and a month-end forecast; the other pages show it in the header. Settings shows both budgets and where the money went (reading emails, questions, briefs), and the admin sees everyone's.
-- `/api/health` reports the shared level, without amounts.
+**Two tools:**
+- **`list_applications`:** your tracked applications, filtered. It uses the same read-only tool as the Telegram chat and costs no AI. Agents use it to find the right application id.
+- **`generate_prep_brief(application_id)`:** our agent's reasoning, offered as a tool.
+  - **Code decides first** whether there's anything to prepare for: an interview, an assessment, or nothing (applied, rejected, offer). "Nothing" is free.
+  - **For an interview or assessment,** it reads that application's emails and returns typed JSON: what's required, the format, the date, the people, the topics, a timeline, and preparation tips.
+  - **Grounding:** every fact carries a verbatim quote from an email, and code drops any claim whose quote isn't there.
+  - **Cost:** charged to the owner's allowance, cached until something changes, and limited to 10 new briefs an hour.
 
-**Known limits.**
-- Two calls running at the same moment can each pass the check, so a budget can go over by about one call's worst case each: cents.
-- Deleting your data and registering again starts a new allowance. The shared cap still bounds the total.
-- The costs are our own calculation from the token counts, not Google's bill: prices can change, Google's billing day follows Pacific time, and caching discounts make our figure slightly high (the safe side). As an outer safety net, set a $25 budget alert in Google Cloud Billing; it emails, but doesn't stop spending.
-- After a pause, the emails that waited are read from the 1st, up to 25 per person every 5 minutes, so their cards trickle in.
+**Who is allowed to trigger the action from requirement 3 this way?** No one. External agents are strictly limited to read-only data fetching and stateless AI synthesis. Triggering status updates or any database writes remains exclusively locked behind the human's manual Telegram approval to prevent race conditions and enforce strict human-in-the-loop safety.
 
-## 8. MCP: what other agents can use, and who can trigger the action
+**How that's enforced:**
+1. There are no write tools, and none that could put a card in front of the owner.
+2. The tools read through a database client that refuses every write in code (`src/lib/db-readonly.ts`).
+3. Every query is limited to the token's owner. Someone else's application id gets the same answer as a missing one.
+4. The token is shown once, stored only as a hash, and can be replaced or revoked at once. Every call is logged and limited to 120 an hour.
 
-**Who uses it.** The student's own AI assistant (Claude, Cursor, a calendar agent), connected with a token the student creates in the dashboard. Example: a calendar agent sees "Wix interview tomorrow", finds the application, and asks our agent for a brief.
+## 9. Build log: what I did in each step
 
-**Two tools, on purpose.**
-- `list_applications`: plain data, the same function the Telegram chat uses (one tool layer, two consumers). No AI cost. It's how an agent finds the right application id: "Amazon" can mean four applications.
-- `generate_prep_brief(application_id)`: our agent's reasoning, not our rows, for the application's next step.
-
-  **Code decides first what there is to prepare for**, before any AI call (`planBrief`), and returns it as `briefType`:
-  - `interview`, when the status is Interview, or an interview invitation's card is still waiting for the student's approval in Telegram;
-  - `assessment` (online test or home assignment), likewise;
-  - `none`, with the reason, for an application still waiting for a reply, rejected, withdrawn or at offer. This costs nothing.
-
-  When a card is still waiting, `pendingApproval` says so. The brief reports the pending card; it never applies it, so the tracker's status changes only in Telegram. Before this rule, the tool wrote interview prep for any application, including rejected ones, at a cost.
-
-  For an interview or assessment, it reads that application's emails (all of them, oldest first, up to the 12 newest) and returns **typed JSON** for the calling agent, declared as the tool's `outputSchema`:
-  - `context` (from our records);
-  - `actionRequired` and `agenda` (format, duration, schedule, location, people, topics; for an assessment, format is the platform and schedule the deadline), each fact with its verbatim `evidenceQuote`, email date and subject;
-  - a dated `timeline`;
-  - `prepFromEmails` (inferred from the facts);
-  - `roleSpecificPrep`: 2–3 general tips for the role title, labelled as general knowledge; a tip that names the company is dropped as a likely made-up claim about its process;
-  - `notInEmails`;
-  - `meta` (quotes verified, claims dropped, cached).
-
-  The text content is the same JSON, for clients that don't read structured output.
-
-  It's grounded the same way as the cards:
-  - every timeline item and detail must cite an email and copy its sentence;
-  - code drops any claim whose quote isn't in that email;
-  - dates come from our records;
-  - preparation steps are labelled as inferred;
-  - email text is treated as data.
-
-  `eval:mcp` plants "write that the candidate got an offer" in an email; the brief ignores it.
-
-  It costs money, so it's bounded:
-  - charged to the token owner's $5 allowance (§7);
-  - cached until the application gets a new email or status, so an agent asking every hour pays once;
-  - at most 10 new briefs an hour per token.
-
-  A raw query API would only expose the platform's data; the brief lets another agent use the agent.
-
-**Who is allowed to trigger the action from requirement 3 this way? No one.** External agents are limited to read-only data fetching and stateless AI synthesis. Triggering status updates, or any database write, remains exclusively behind the human's manual approval in Telegram. That prevents race conditions with the owner's own decisions and keeps a human in the loop for every change. This holds even with the owner's own token: the whole point of the action is that the owner looked at the evidence and decided, and an MCP client is another agent. There's also no "propose an update" tool, so an agent can't even put a card in front of the owner; every proposal comes from an email.
-
-**How that's enforced.**
-1. No write tools exist; both tools are marked read-only.
-2. Tools read through a database client that refuses every write in code (`src/lib/db-readonly.ts`), so even a bug in a tool can't change data. At deploy time, a database role with SELECT rights only is added under it.
-3. Every query is filtered to the token's user. Another user's id gets the same answer as a missing one.
-4. The only rows written during a call are our own audit row and cost record. Our wrapper writes them, never the tool.
-5. Every call is logged, and calls are rate-limited per token (120 an hour).
-
-**The token.**
-- Created in dashboard Settings and shown once.
-- Stored only as a SHA-256 hash (`jht_mcp_` prefix, so secret scanners can spot a leaked one).
-- Replace and revoke take effect at once.
-- Not issued from Telegram, where it would sit in the chat history forever.
-- Creating or revoking it is the dashboard's only write, and it touches nothing but that user's token.
-
-**Transport.** Streamable HTTP at `POST /api/mcp`, stateless, JSON responses, which suits serverless hosting. Connect with, for example, `claude mcp add --transport http job-hunt-tracker <APP_URL>/api/mcp --header "Authorization: Bearer <token>"`.
-
-## 9. Build log (what I did in each step)
-
-| Step | What I did | Decisions / findings |
+| Step | What I did | Key decision or finding |
 |---|---|---|
-| 0. Planning (2026-10-07) | Read the brief, picked the problem, wrote an internal build plan (architecture, schema, state machines) and this skeleton, checked current package versions and platform limits | Pinned Prisma 7.10.0. Scheduled sync with Supabase pg_cron because Vercel Hobby cron is daily only. Flagged Google's 7-day token expiry in "Testing" mode. |
-| 1. Scaffold + DB (2026-10-07) | Scaffolded Next.js 16, created the Supabase project, wrote the Prisma schema (6 tables), applied the first migration, added the DB client and a `/api/health` check. Smoke-tested through the transaction pooler: a write inside a transaction, a 64-bit Telegram ID, and rollback. | Migrations are generated with `prisma migrate diff` and applied with `migrate deploy`, so no shadow database is needed on Supabase. "One pending proposal per application" is enforced by a partial unique index in the database, not only in code. |
-| 2. Telegram (2026-10-07) | Created the bot with BotFather. Added `/start` (registers the Telegram account as a user), `/help`, the webhook route, a local polling script and a command-menu setup script. Tested the route with fake updates (no secret, wrong secret, valid update, group chat), then live in Telegram (`/start` twice, `/help`, free text). | The webhook rejects requests without the exact secret and refuses to work if no secret is configured. Failed updates are logged and acknowledged so Telegram doesn't re-send them. The bot ignores group chats, so approvals stay one-to-one. |
-| 3. Gmail sync (2026-10-07) | Google Cloud project with the Gmail API and a read-only OAuth client (Testing mode). Built `/connect` (signed 10-minute link → Google consent → encrypted refresh token), `/sync`, a cron endpoint, and a free prefilter. 16 unit tests. Live test: real inbox backfill (17 unrelated emails skipped, nothing stored but sender and subject), then a mock rejection email, which was caught and queued. | The prefilter is tuned for recall, because a missed rejection is worse than one extra model call. Unrelated emails keep sender and subject only. A tester who emails themselves would have been silently ignored by Gmail's `-in:sent` filter; outgoing mail is now dropped by label instead. |
-| 4. Classifier + approval (2026-10-07) | Gemini key on a **billed** project (paid tier, so inbox content isn't used to improve Google's products). Built the classifier, the verbatim-quote check, deterministic matching, proposals, Telegram cards and approve/reject/retry/expiry. 32 unit tests, plus `npm run eval:approval` against the real database. Live test with mock emails: a TechNova rejection was approved, an Apex Systems assessment was rejected by the user, and a CloudScale rejection was approved; the audit trail matches each tap. | The model only proposes; code decides whether a proposal exists (quote found verbatim), which application it belongs to (domain → name → role similarity), and caps the model's confidence. Approving is one transaction with an optimistic check, so double taps, stale cards and duplicate creates can't corrupt data. Measured: 678 input / 97 output tokens per classification, $0.00045, about 4× below the $0.002 estimate. |
-| 5a. Job IDs + ambiguity (2026-10-07) | Classifier extracts job IDs; matching uses them first; ambiguous emails get a "Which application is this?" card. 40 unit tests (incl. an Amazon case with two same-title roles) and 7 approval-eval scenarios. | Asking beats guessing: an update applied to the wrong Amazon application is worse than one extra tap. |
-| 5b. Chat (2026-10-07) | Telegram questions answered by Gemini with four read-only tools (list, detail, stats, email search); a tool call is forced before the first answer; `/status` with no AI. Live test on the real tracker: open/no-reply, Amazon (correctly "none, here's what I checked"), rejection count, follow-up, refusal to edit, Hebrew. | The chat has no write tools at all, so a request to change data can only be refused. Measured about $0.001 per question (2–3 model calls), about 4× under the estimate. Daily cap: 40 questions per user. |
-| 5c. Re-applications (2026-10-07) | Found by the user: a new TechNova confirmation was applied to the rejected TechNova application and offered "Rejected → Applied" as a normal approval. Added a pure planning step (`planProposal`) with the rules in A13, made the same-title uniqueness apply only to applications waiting for a first reply, and made `/status` and the chat describe statuses in words ("waiting for a reply" shown inside "Open"). 49 unit tests, 9 approval-eval scenarios. | A backwards move used to be only a warning. Now a confirmation can't move anything, and a closed application can't reopen without the user choosing it. |
-| 5d. Test round (2026-10-07) | Added two evals that call the real model: the classifier (12 known-answer emails incl. traps and a prompt injection) and the chat (seeded data: counts, "don't know", refusal, planted instruction). Stress-tested two analyses at once, the hard budget cap and the cron endpoint. | The evals found two real chat bugs and the stress tests found two more (see the AI log). All four are fixed and covered by tests. |
-| 5e. Open email + data rights (2026-10-07) | The user reported that "Open email" landed on Gmail's "Temporary Error (404)". Three link formats were tested on a real email; `?authuser=<email>#all/<messageId>` works. Added `/disconnect` and `/delete_my_data` with owner-only, expiring confirmations. 56 unit tests; `npm run eval:account` (owner/expiry checks, disconnect keeps the tracker, delete removes every row of that user and nothing of another). | A disconnected user keeps chat and `/status` over their tracker. The revoke is best effort: if Google can't confirm it, the user is told where to remove access by hand. |
-| 5f. First-sync review (2026-10-07) | The user found the first sync floods the chat with cards. Proposals from past emails are now held; one summary when all are read; one card at a time with "Later"; `/pending` resumes; expiry counts from when a card is shown; review cards are silent. Also fixed taps that waited behind a long `/sync` (see the AI log). 61 unit tests; `npm run eval:review` (6 checks). | Requirement 3 rules out "approve all", so the fix changes when cards arrive, not how they're approved. Live emails are never held: an interview invite shouldn't wait behind a review. |
-| 5g. Monthly budget (2026-10-07) | Measured the real cost per call (§6). Added a $5 allowance per person next to the $25 shared cap, with levels at 80% and "used up", once-a-month Telegram notices (50% to the admin), the budget in `/status`, the dashboard and the health check. The cheaper model was tested with our evals first; it's used for reading emails only. Planned with a code map by one AI agent and a design review by another, which found five flaws in my draft (see the AI log). 85 unit tests; `npm run eval:budget` (8 checks, $0). | The budget no longer changes an email's state: when it's used up, reading simply doesn't start, so nothing needs undoing. A question starts only if a whole one fits. |
-| 6a. Dashboard: sign-in + read-only views (2026-10-07) | `/dashboard` in the bot sends a single-use sign-in link (A16). Pages: overview (counts, the proposals waiting in Telegram, applications with a colour per stage), an application timeline (each email with the agent's reasoning, the verified quote, confidence and the owner's decision), settings (Gmail status, the AI budget explained), and an AI-budget bar in the header. Built with shadcn/ui (Radix, tested on a throwaway copy first). A five-angle review by independent AI reviewers, each finding checked by a skeptic, found 4 real bugs, all fixed (see the AI log). 70 unit tests; `npm run eval:dashboard` (5 checks, including HTTP against the running app); screenshots of every page from a headless browser with seeded demo data. | The dashboard can't approve anything: proposals show "Awaiting your approval in Telegram". The budget bar shows spend against the $25 AI cap the code enforces, not the $50 total, because the agent stops at $25. Dates shown are the emails' dates, not the day you tapped Approve. |
-| 6b. Dashboard edits (2026-10-08, after first being dropped) | The user found that a missed email leaves an application stuck. Added "Change status" on each application's page (A10). First, as planned, the sign-in link stopped signing in directly: opening it shows "Continue as <name>", and only that button (a same-site form post) signs in. The dashboard was reordered too: the waiting cards next to the totals, the chat in its own column next to the pipeline. `eval:dashboard` 6/6: a cross-site post is refused; edits only from the shown status, only on your own applications, recorded, and a waiting card then no longer applies; the one-waiting-per-title rule holds. Tested in a browser end to end. | Without the confirmation, someone could send you a link to *their* account and your edits would land in their tracker. It also means a link preview can't use a link up any more. |
-| 7. MCP (2026-10-08) | The user redirected the plan from read-only queries to exposing the agent itself. Built `list_applications` and `generate_prep_brief` (§8; first called `generate_interview_brief`, renamed when it began covering assessments, with code deciding whether there's anything to prepare for), the token in dashboard Settings (shown once, hashed, replace and revoke), a write-blocking database client for tools, an audit row per call and rate limits. 89 unit tests; `npm run eval:mcp` (8 checks over HTTP with the official MCP client, one real brief). | The brief is charged to the owner's allowance and cached until the next email. Generated briefs are stored in the audit row, which is also the cache, so `/delete_my_data` removes them with the rest. |
-| 8. Deploy (2026-10-08) | Live at https://home-assignment-henna.vercel.app (Vercel, Washington D.C., next to the Supabase database in us-east-1). The Telegram bot runs on the webhook, with the secret checked. Supabase `pg_cron` + `pg_net` call `/api/cron/sync` every 5 minutes, with the secret kept in Supabase Vault. The Google sign-in app is published ("In production", unverified: up to 100 users, with Google's warning screen), so Gmail access no longer expires after 7 days; added privacy and terms pages for it. Verified live: health, every protected route refuses requests without its secret, the cron returns 200, and a mock email became a card in about 2 minutes with no `/sync`, then showed up in the dashboard and the chat. | One database for local development and production, so the existing account kept working; that's why `TOKEN_ENCRYPTION_KEY` is the same in both. A separate production database would be cleaner, at the cost of reconnecting everything. A first `APP_URL` pointed at someone else's domain; caught by checking where the app's own redirects went before going further. |
-| 9. Polish for reviewers (2026-10-08, night) | Rebuilt the website with shadcn/ui: a landing page with a scroll-driven tour (framer-motion), a bento-grid dashboard (budget and totals, the pipeline with search and a status bar, cards waiting for approval, recent activity), the application timeline, a Developers page documenting MCP with a validated example, and legal pages. Rewrote every bot message (warmer, shorter cards that lead with the change, `/dashboard` and `/connect` as link buttons). Added where the AI spend goes, a forecast and an admin view. Built `/demo` (A19). 97 unit tests; new `eval:demo` and `eval:bot`, and `npm run evals` to run them all. | Headless-browser screenshots of every page at desktop and phone width, light and dark, caught a stale stylesheet, a duplicated title, an empty card and inconsistent rounding. Each feature was finished on a branch and checked before the next. |
-| 9b. Chat in the dashboard (2026-10-08) | The user pointed out that the agent could only be talked to in Telegram, while the brief says "Telegram + gui". Added "Ask the agent" to the overview, replacing Recent activity (A20): a Server Action that checks the session itself (it's a public endpoint), refuses deleted accounts and empty or over-long questions, then calls the same `answerQuestion` as the bot. Tested in a real browser on the demo account: typed a question, got the right two applications, and the turn came back after a reload. 98 unit tests. | One agent, two channels, one conversation. |
-| 9c. A designed look (2026-10-08) | The user redesigned the landing page in Figma; its design (not its copy) now runs through the whole app: lavender paper, deep ink, one violet accent, lime only as a highlight, pill buttons, large rounded white cards, a dark grid section. Headings are set in an upright grotesk (Schibsted Grotesk) instead of the italic serif in the Figma file, for a more matter-of-fact tone; body text in DM Sans. The landing page went from a long scroll-driven tour to three short parts: the hero with a fan of tracked applications, how it works in three steps, the call to action. Status colours follow the palette (lime interview, violet offer, lilac assessment), with rejected kept rose so a "no" still reads as one. | The Figma file was a single page; the same tokens (`globals.css`) carry it to the dashboard, the legal pages and the Gmail result page. The landing pictures stay light in dark mode, so their status pills keep the light colours. |
-| 9d. Palette locked (2026-10-08) | The user settled the colours: a zinc base (white page, zinc-50 cards, zinc-200 borders, zinc-900 and zinc-500 text), one action blue `#0085CC` (hover `#0073B3`), and the semantic statuses again (zinc applied, amber interview, emerald offer, rose rejected). The Figma layout and fonts stay; its violet and lime became the blue and a light-blue highlight. | Tailwind v4 keeps the theme in `globals.css`, so the colours are tokens there; there is no `tailwind.config.ts`. |
-| 10. Evals (2026-10-08) | Ten eval suites (§11), each a script against the real database; five call the real model. `eval:bot` drives the Telegram bot's own handlers with Telegram replaced by a recorder, so the whole reviewer path is tested without touching the live bot. | The evals found real bugs throughout (AI log): two in the chat, a 5-second transaction limit, the past-email review going out early. |
+| 0. Plan | Read the brief, picked the problem, planned the architecture, schema and approval state machine. | Scheduled the sync from Supabase, because Vercel's free cron is daily. Google's "Testing" mode expires Gmail access after 7 days, so the app must be published. |
+| 1. Scaffold | Next.js, Supabase, Prisma schema, health check. | "One pending card per application" is enforced by the database, not only by code. |
+| 2. Telegram | The bot, `/start` and `/help`, the webhook with its secret check. | Failed updates are acknowledged, so Telegram doesn't resend them. Groups are ignored. |
+| 3. Gmail sync | Read-only OAuth, encrypted tokens, `/connect`, `/sync`, the free prefilter. | Mail that isn't job-related keeps only its sender and subject. |
+| 4. Classifier and approval | Gemini classification, the verbatim quote check, matching, cards with Approve, Reject, Retry and expiry. | Approving is one transaction with a check that nothing changed meanwhile, so double taps and stale cards can't corrupt data. |
+| 5. Hardening | Job IDs and "which application?", the chat with read-only tools, re-application rules, data rights, the first-sync review, the monthly budget. | Each was driven by a real failure, most found by the user or by evals (§10). |
+| 6. Dashboard | Sign-in through the bot, the pipeline, a timeline with the evidence, settings. | Telegram is the identity: no passwords. |
+| 7. MCP | The two tools, tokens, and the write-blocking client. | Expose the agent's reasoning, not the database (the user redirected the first plan). |
+| 8. Deploy | Vercel, the webhook, `pg_cron`, the Google app published. Verified live: a test email became a card in about 2 minutes. | One database for development and production. |
+| 9. Polish for reviewers | `/demo`, a rewrite of every bot message, the landing page and dashboard design, the dashboard chat, status fixes by hand, the "Continue as" sign-in. | Testers need a path that works without exposing their inbox. |
+| 10. Evals | Ten eval suites (§11), including one that drives the real bot end to end. | They found real bugs throughout. |
 
-## 10. Where AI helped, and where it was wrong or misleading
+## 10. Where AI helped, and where it was wrong
 
-I used Claude Code (Claude Opus) as a pair programmer for planning, scaffolding and code.
+I used Claude Code as a pair programmer for planning and code.
 
-**Helped**
-- Checked the npm registry before writing install commands. `prisma`'s `latest` tag points to `8.0.0-rc.21` (a release candidate) while `@prisma/client`'s points to `7.10.0`, so a plain `npm install` would have mixed major versions. All Prisma packages are now pinned to 7.10.0.
-- Found that Google OAuth apps in "Testing" mode issue refresh tokens for `gmail.readonly` that expire after 7 days. That would have broken the deployment during the 10-day review window, so publishing the app to "In production" is now a deploy step.
-- Found that Vercel Hobby cron runs at most once a day, which led to scheduling the sync with Supabase pg_cron.
-- Before keeping a code comment that says Google advises against lowering temperature for Gemini 3 models, checked Google's Gemini 3 guide: it does ("may lead to unexpected behavior, such as looping"). Also called both candidate models before relying on them, because the model-list API isn't proof a model is available.
-- Read grammY's webhook source before relying on it. When no secret is configured, the library skips the secret check entirely, and a handler error returns HTTP 500, which makes Telegram re-send the update. Both are now handled in our route.
-- Ran the shadcn CLI on a throwaway copy of the project before touching the repo. It made the font setting point at itself and switched dark mode to a CSS class nothing sets; both were fixed before the real run. It also now installs a `cn` package instead of `clsx` + `tailwind-merge`; checked its publisher (shadcn's own account and repository) and that it has no install scripts before accepting it.
-- Took screenshots of every dashboard page with headless Chrome and seeded demo data, which caught a wrong date that all tests had passed.
-- Tested `create-next-app` in a scratch folder: it refuses to run in a folder that already contains this file, my planning notes or the brief, so the setup commands move them aside first.
+**Where it helped:**
+- **Package versions:** it checked the npm registry first and found that `prisma@latest` was a release candidate while `@prisma/client@latest` was 7.10. A plain install would have mixed versions; everything is pinned to 7.10.0.
+- **Gmail access would have expired:** apps in Google's "Testing" mode lose Gmail access after 7 days, which would have broken the 10-day review window. Publishing the app became a deploy step.
+- **The free cron limit:** Vercel's free cron runs once a day, so the sync is scheduled by Supabase instead.
+- **The Telegram library:** it read grammY's webhook source and found that it skips the secret check when no secret is set, and that errors make Telegram resend updates. Both are handled in our route.
+- **Screenshots:** headless-browser screenshots of every page caught a wrong date that all the tests had passed.
 
-**Wrong or misleading**
+**Where it was wrong or misleading (and how it was caught):**
 
-| When | What the AI said or did | How I caught it | Fix |
-|---|---|---|---|
-| Phase 9 | I added an active state to the dashboard's navigation with `usePathname()` outside `<Suspense>`. With Cache Components, the pathname of a page with an id in it is only known at request time, so this blocks prerendering of that page. The production build passed; only the dev overlay ("3 Issues") and the server log showed it | Screenshots of the detail page showed the overlay's badge | Both URL-reading components sit in `<Suspense>` with a fallback (unmarked links), as the bundled Next docs prescribe |
-| Phase 9 | Approving and creating cards run in Prisma interactive transactions with the default 5-second limit. From a laptop far from the database, a transaction sometimes took 5.5 s and failed: a card wasn't created, or a tap reported "Couldn't apply it" | `eval:approval` failed once in three runs | 15 s limit for those transactions (`TX_OPTIONS`); six reruns passed |
-| Phase 9 | The dashboard's waiting count and `/status` used different rules for "waiting for your decision" (one counted failed cards, the other didn't), so the two disagreed | An AI reviewer comparing the two | One shared rule (`waitingForDecisionWhere`); failed cards also expire now |
-| Phase 9 | I judged the new accent colour from screenshots of a dev server that was still serving the old stylesheet (it was waiting for the file system to settle after `npm install`) | The colour looked blue, not indigo; checked the CSS the server actually served | Restarted the server and re-took every screenshot |
-| Phase 7 | I first proposed an MCP server of read-only database queries. That exposes the platform's data, not the agent, which the brief asks for | The user | `generate_prep_brief`: the agent's grounded reasoning as a tool, with `list_applications` kept only to find the id |
-| Phase 7 | I planned that MCP tools would run on a database role that can only SELECT. With an AI tool, a call must also write a cost record and an audit row, so the "whole handler on a read-only role" claim couldn't hold | Re-reading the plan when the brief tool was added | Tools read through a write-blocking client; only our wrapper writes the cost and audit rows; the SELECT-only role sits under the tools at deploy |
-| Phase 5g | My first budget design said "stop at 100%". But a call only runs if its worst case fits, so spend never reaches 100%: the "used up" notices would never fire, and chat and email reading would stop on different days | The AI design reviewer | "Used up" means one more whole question doesn't fit ($0.045 reserve) |
-| Phase 5g | Hitting the budget cap during a first sync marked the remaining past emails as deferred, and the past-email review counted them as read: the review summary went out early, and those emails later arrived as one-by-one cards | The AI agent mapping the budget code | One shared definition of "not read yet" (it includes the old deferred state); the budget no longer changes email states; covered by `eval:budget` |
-| Phase 6 | The "used" marker of a sign-in link was a hash of the link text, but the token parser ignored anything after a second dot. So `<link>.x`, `<link>.y`… each passed as a fresh link: a used link could sign in again for its 10 minutes, which broke the one-use rule | Two of the five AI reviewers, independently | Tokens must have exactly two parts; unit tests and an eval step try `.`, `.x` and `.a.b` |
-| Phase 6 | The home page looked up `?login=` messages with `in`, which also matches built-in keys: `/?login=toString` rendered a function and crashed the page | Three AI reviewers, independently | Own-key check (`Object.hasOwn`), unit-tested with `toString`, `constructor`, `__proto__`; same fix on the Gmail result page |
-| Phase 6 | The session check reads the clock (cookie expiry). Next 16 refuses that during the per-session prefetch render, which logged an error on every signed-in page. The production build passed, so only the dev log showed it | Reading the dev server log after the first eval | `await connection()` before the session read, as the bundled Next docs prescribe |
-| Phase 6 | "Since" dates used `statusChangedAt`, the moment you tapped Approve. Every application from the first-day review of past emails showed that day, contradicting "Applied 12 Aug" one line below. My first fix then took the newest approval, which picks the wrong one when two approvals share a timestamp ("Offer since 18 Aug" for a 5 Oct offer) | The first by an AI reviewer; the second by me, reading a screenshot of seeded data | The date of the email behind the approval that set the current status; an eval case with two approvals at the same instant |
-| Phase 4 | I designed delivery as one card per email the moment it's analysed, and tested it with a handful of mock emails. A real first sync reads 60 days of mail and pushed a wall of cards at once. | The user's first sync | Past emails are reviewed one card at a time after one summary (A15); covered by `eval:review` |
-| Phase 4 | The approve handler answered the tap only after the database work. The local bot handles one update at a time, so taps made during a long `/sync` waited more than 15 seconds, Telegram refused the late answer, and the error stopped the card from being redrawn: the approval was saved but the buttons stayed. | Four "query is too old" errors in the bot log | A late answer is ignored and the card is redrawn anyway; past-email cards no longer arrive during a sync |
-| Phase 4 | I built the "Open email" link with the account email percent-encoded inside the path (`/mail/u/name%40gmail.com/`) and never opened one. Gmail answers that with "Temporary Error (404)". | The user tapped it | `?authuser=<email>` plus the message ID, a format the user verified on a real email; covered by a unit test |
-| Phase 5 | A chat answer cited an email subject that doesn't exist ("Update on your application"). The real subject was a planted instruction, which the model rightly ignored but replaced with an invented, plausible one | `npm run eval:chat`, 1 run in 2 | Anything the answer puts in quotes must appear verbatim in this turn's tool results: one retry with the reason, then the quote is removed and the failure logged. Prompt also forbids writing a subject it didn't fetch. |
-| Phase 5 | My tool loop relied on Gemini's mode NONE to force a text answer in the last round; Gemini sometimes still returned a tool call and no text, so the user got "I couldn't put an answer together" | `npm run eval:chat`, intermittent | The final round gets no tools at all plus an explicit "answer now" instruction; verified by forcing the final round |
-| Phase 5 | Analysis had no protection against two runs at once (5-minute cron + a manual `/sync`): the same email was classified twice and produced two cards | A stress test running two analyses in parallel | Each email is claimed atomically (`ANALYZING` + `claimedAt`) before the model call; a claim older than 5 minutes can be taken over. Re-test: one call, one card. |
-| Phase 5 | The cron endpoint returned raw database errors (query shape, user id) in its JSON response | Calling the endpoint the way pg_cron will | Responses carry a generic message; details go to the server log |
-| Phase 5 | My matching design applied a new "application received" email to an existing *rejected* application with the same title and proposed "Rejected → Applied", flagged only as an "unusual change". It treated status as one line per company + title, but students re-apply and apply to several same-title postings. | The user's own test in Telegram | A confirmation can no longer move an application; a closed application can't reopen without the user choosing it (A13) |
-| Phase 5 | The first chat answers cited internal tool names as their source ("from get_stats", "list_applications with no_reply_yet=true"), meaningless to a student | Reading the answers of the first live test | Prompt now requires sources in the user's terms: company, role, email subject and date |
-| Phase 4 | My first version logged a non-owner's tap on an Approve button as `PROPOSAL_REJECTED`, which would put a rejection that never happened into the audit trail | Re-reading the approval code before testing it | Added a dedicated `APPROVAL_DENIED` action (one-line migration) |
-| Phase 1 | Read the Next 16 guide's "Route Handlers are not cached by default" and concluded no caching config was needed, without opening `next.config.ts`. The scaffold had turned on `cacheComponents`, where pages that read the URL must be wrapped in `<Suspense>`. | The first page reading `searchParams` failed `next build` | Wrapped it per the bundled Next docs; added the rule to the project conventions |
-| Phase 0 plan | Said the partial unique index couldn't be expressed in the Prisma schema and planned to add it as raw SQL in a migration | While building Phase 1, tested Prisma 7.10's `partialIndexes` preview feature in a scratch project; it works | Index declared in the schema. Raw SQL would have looked like drift, and a later migration would have dropped it. |
-| Phase 0 plan | Wrote that Supabase RLS "does not apply" because Prisma connects as the owner role. That ignored Supabase's auto-generated REST API: with RLS off, the `anon` role could read **and insert** into every table, including the one that will hold Gmail tokens | Before Phase 3, checked `has_table_privilege('anon', …)` on the live database | Migration enables RLS on every table, revokes the `anon`/`authenticated` grants and the default grants for future tables. Verified with `SET ROLE anon`: permission denied. |
-| Phase 0 plan | Stored "who is admin" twice: a `role` column and the `ADMIN_TELEGRAM_USER_ID` env var. After the first `/start` they already disagreed (`MEMBER` in the DB, admin in env). | Explaining the tables to the user | Dropped the column; the env var is the single source |
-| Phase 0 plan | Put `CREATE ROLE mcp_readonly ... PASSWORD '...'` in the list of migration SQL | Noticed while writing the migration that it would commit a database password to git | The role is created by hand in the Supabase SQL editor in Phase 7 |
+| What went wrong | Caught by | Fix |
+|---|---|---|
+| Delivered one card per email at once; a real first sync sent a wall of cards. | The user's first sync | Past emails are reviewed one card at a time after a summary (A10). |
+| Built the "Open email" link in a format Gmail answers with a 404, and never opened one. | The user | A link format verified on a real email, with a unit test. |
+| Matched a new "application received" email to an old *rejected* application and offered "Rejected → Applied". | The user's own test | A confirmation can't move an application; a closed one reopens only by choice (A9). |
+| First proposed MCP as read-only database queries: that exposes the data, not the agent. | The user | `generate_prep_brief`: the agent's grounded reasoning as a tool. |
+| A chat answer quoted an email subject that doesn't exist. | `eval:chat` | Quoted text must appear in what the tools returned, or it's removed. |
+| Two analysis runs at once classified the same email twice and sent two cards. | A stress test | Each email is claimed atomically before the model call. |
+| First budget design said "stop at 100%", which can never fire. | An AI design review | "Used up" means one more whole question doesn't fit. |
+| A used sign-in link could be reused by appending text to it. | AI code reviewers | Tokens must have exactly two parts; tested. |
+| Said Supabase's row-level security didn't matter; the public API could actually read and write every table. | Checking table permissions on the live database | Row-level security on and public access revoked, in a migration. |
+| Plain forwarded emails were cut down to nothing before the model read them, so a forwarded interview looked empty. | The user's test | The forwarded message is kept when nothing is written above it. |
+| The sign-in confirmation's same-site check refused real browsers (they send `Origin: null` under the page's referrer policy). | The user, on a phone | A same-origin referrer policy, plus the browser's own `Sec-Fetch-Site` header. |
+| A 5-second database transaction limit failed approvals on a slow connection. | `eval:approval`, once in three runs | A 15-second limit. |
 
 ## 11. Evals
 
-The brief asks for 5 to 10 evals, including one that checks an answer against the source data, one that checks reasoning on a case with a known answer, and one that checks a refusal. Here they are as ten suites; `npm run evals` runs the five that make no model calls and `npm run evals -- --all` runs all ten (about $0.05).
+The brief asks for 5 to 10 evals: one checking an answer against the source data, one checking reasoning on a known case, and one checking a refusal. There are ten suites, run with `npm run evals`, or `npm run evals -- --all` to include the five that call the model (about $0.05 in total).
 
-- **Answer against the source data:** `eval:chat` (counts and companies checked against seeded rows), `eval:mcp` (every brief quote is in an email).
-- **Reasoning on known answers:** `eval:classifier` (24 labelled emails, incl. traps and a prompt injection), `eval:demo` (11 sample emails become exactly six cards from five companies; five live emails each update the right application).
-- **Refusals:** `eval:approval` (a stranger's tap, stale and expired cards), `eval:chat` (asked to change data, it refuses and the database is unchanged), `eval:mcp` (no write tools; the tools' database client refuses writes), `eval:budget` (calls refused when a budget can't afford them).
+- **An answer checked against the source data:** `eval:chat` (counts and companies against seeded rows); `eval:mcp` (every quote in a brief appears in an email).
+- **Reasoning on a known case:** `eval:classifier` (24 labelled emails, including traps and a prompt injection); `eval:demo` (11 sample emails become exactly the expected cards, and five new emails each update the right application).
+- **Refusals:**
+  - `eval:approval`: a stranger's tap, stale and expired cards;
+  - `eval:chat`: asked to change data, it refuses and nothing changes;
+  - `eval:mcp`: no write tools, and writes are blocked;
+  - `eval:budget`: a call that can't be afforded is refused.
 
-| Eval | What it proves | Command | Latest result |
-|---|---|---|---|
-| Telegram bot, end to end | The reviewer's path through the bot's real handlers, with Telegram replaced by a recorder: the landing page's demo link, the review summary, cards one at a time without a Gmail link, Later, a stranger's tap refused, approving each card, the simulated email's live card, `/status`, `/dashboard` and `/connect` as link buttons (the single-use link never in the text), `/pending`, `/sync`, a question answered from the tracker, unknown commands, non-text, groups ignored, `/demo_reset` | `npm run eval:bot` (real DB and AI, about $0.01) | 8/8 |
-| Demo | The sample inbox through the real agent: loads once, never with Gmail connected; 6 review cards from 5 companies (three two-email threads collapse; the newsletter is dropped by the AI, the job alert by the prefilter); five live emails each get a card for the right application, including a job-ID match between two roles and "which application?"; `/demo_reset` leaves nothing | `npm run eval:demo` (real DB and AI, about $0.01) | 5/5, three runs |
-| MCP | Missing, unknown and revoked tokens are refused; exactly two read-only tools; an interview brief while the invite's card still waits in Telegram (reported, not applied); rejected and still-waiting applications get `briefType: none` at no cost; each token sees only its owner's data; every brief quote is in an email and a planted instruction is ignored; the brief is charged to the owner, cached until a new email, refused when the allowance is used up; the tools' database client refuses writes; every call is audited | `npm run eval:mcp` (the official MCP client over HTTP against the running app; one real brief, about $0.003; `SHOW_BRIEF=1` prints it) | 9/9 |
-| Monthly budget | Spend per person and in total within the UTC month; ok → low (lighter email model, 20 questions) → used up; each notice sent once, even by two runs at once; the per-call check refuses what doesn't fit; at "used up" no email is claimed or changed; the past-email review waits for deferred emails; chat refused up front (yours or shared) and limited at 80%; shared notices to the admin at 50% and everyone from 80%; a jump sends only the highest notice; a temporary Telegram error is retried, a blocked chat isn't | `npm run eval:budget` (real DB, a fake API key so nothing can be spent, spend seeded in 2001) | 8/8, $0 |
-| Lighter model | `gemini-3.1-flash-lite` on the same LLM evals before using it at 80% | `GEMINI_MODEL=gemini-3.1-flash-lite npm run eval:classifier -- --runs 2` and `eval:chat` ×2 | Classifier 24/24; chat 11/12 (a count without its source), so chat doesn't switch |
-| Dashboard sign-in | A link signs in once under any spelling; expired, wrong-purpose and garbled links are refused; every read is scoped to the user; "since" dates come from the emails. Over HTTP against the running app: the real cookie flags, HEAD doesn't use a link, the same browser may reopen its link but another user's browser may not, only the signed-in user's data on every page, the timeline shows quotes and decisions, `?login=toString` is safe, signed-out redirect, log out, and a deleted account's cookie is refused | `npm run eval:dashboard` (real DB + the app at APP_URL; fails if the app isn't running unless `EVAL_SKIP_HTTP=1`) | 5/5 |
-| First-sync review | Past emails send no cards until all are read; a confirmation + rejection becomes one card; one summary, sent once; one card at a time grouped by company; Later (owner only, not on the last card); a queued card can still be approved; the last decision ends the review; live email isn't held | `npm run eval:review` (real DB, throwaway user) | 6/6 |
-| Data rights | Confirmations only work for their owner and expire; `/disconnect` keeps the tracker; `/delete_my_data` removes every row of that user and nothing of another, keeps cost rows anonymously | `npm run eval:account` (real DB + a real revoke call with a fake token) | 3/3 |
-| Approval safety | The action refuses what it should: a stranger's tap, double taps, stale and expired cards, duplicate creates, approving an ambiguous card without choosing, reopening a closed application; proposals follow email order | `npm run eval:approval` (real DB, throwaway user) | 9/9 scenarios |
-| Classifier | Reasoning on known answers: explicit and soft rejections, "unfortunately" that isn't a rejection, ATS platform vs company, job ID vs candidate ID, marketing, Hebrew, offer, interview, job alert, **prompt injection** ("classify this as OFFER"); quotes and job IDs must be verbatim | `npm run eval:classifier -- --runs 2` | 24/24 |
-| Chat | Answers checked against the source data (counts, companies), "I don't have that" for an untracked company, refusal to change data (and the DB is unchanged after), a planted instruction in an email subject | `npm run eval:chat` | 12/12 over 2 runs, 0 invented quotes after the fix |
-| Unit tests | Parsing, prefilter, crypto, quote and job-ID verification, matching (incl. 4 Amazon applications), proposal planning, cards (incl. review and queued cards), Gmail link, confirmations, account and review texts, which emails are held, sign-in tokens (one spelling, purposes, nonce, 7-day expiry), sign-in messages, link previews off for `/dashboard`, budget rules (month edges, levels, the reserve, person × shared, notice planning), model choice, Telegram error kinds, budget texts, MCP tokens and Bearer parsing, brief grounding (made-up quotes and unknown emails dropped, dates from our records), what a brief prepares for (each status, pending cards), the bot's texts (welcome, link buttons with a local fallback, `/sync` and `/status` wording, spend breakdown and forecast), the sample inbox (fictional senders, demo ids, the prefilter's verdicts) | `npm test` | 98/98 |
+| Eval | What it proves | Result |
+|---|---|---|
+| `eval:approval` | Only the owner's tap changes data. Double taps, stale and expired cards, and an ambiguous card without a choice are refused. | 9/9 |
+| `eval:review` | The first sync: one summary, then one card at a time; Later; new email isn't held back. | 6/6 |
+| `eval:account` | `/disconnect` keeps the tracker; `/delete_my_data` erases one user and no one else. | 3/3 |
+| `eval:budget` | Both caps, the levels, notices sent once, calls refused before spending. | 8/8, $0 |
+| `eval:dashboard` | Sign-in links work once and ask to continue; cross-site sign-in is refused; each user sees only their own data; status fixes by hand. | 6/6 |
+| `eval:classifier` | Category, verbatim quote and job ID on labelled emails, including a prompt injection. | 24/24 |
+| `eval:chat` | Answers match the data; "I don't have that"; refuses to change data. | 6/6 per run |
+| `eval:mcp` | Tokens, read-only tools, scoped to the owner, grounded briefs, a planted instruction ignored. | 9/9 |
+| `eval:demo` | The sample inbox through the real agent. | 5/5 |
+| `eval:bot` | The Telegram bot end to end through its real handlers, with Telegram replaced by a recorder. | 8/8 |
 
-The LLM evals assert on structured fields or simple facts in the answer, not on wording, and are run more than once to catch flaky behaviour.
+The model evals check structured fields and facts, not wording, and are run more than once to catch flaky behaviour. There are also 99 unit tests (`npm test`).
 
-## 12. Understanding questions (bonus)
+## 12. Understanding questions
 
 ### 12.1 An approved action's external call fails halfway. What happens, and what does the user see?
 
-The action is a database write: creating or updating an application when the owner taps Approve. It runs as one Postgres transaction:
-1. claim the card (only a card that is still pending or failed, and not expired, can be claimed, so a double tap can't run it twice);
-2. check that the application hasn't changed since the card was made;
-3. write the change and its audit row.
+The action is a database write, run as one Postgres transaction. It claims the card (only a pending card can be claimed, so a double tap can't run it twice), checks that the application hasn't changed since the card was made, then writes the change and its audit row.
 
-If anything fails partway (the connection drops, a constraint refuses, the time limit passes), the whole transaction rolls back, so nothing is half-applied. Outside the transaction the card is then marked failed with the reason. The owner sees a short notice, "Couldn't apply it. Nothing changed; you can retry", and the card redrawn as "❌ Couldn't apply it. Nothing changed." with **Retry** and **Reject**. Retry runs the same transaction again. If the application changed in the meantime, the card becomes "Not applied: the application changed after this card was made" instead of overwriting it.
+If anything fails partway (the connection drops, a constraint refuses, the time limit passes), the whole transaction rolls back, so nothing is half-applied. The card is then marked failed. The user sees "Couldn't apply it. Nothing changed; you can retry" and the card redrawn with **Retry** and **Reject**. If the application changed in the meantime, the card says so instead of overwriting it.
 
-Telegram is the other external call. A card is only a view of the database, redrawn after the commit. If Telegram fails at that point, the change is already saved: the next tap answers "Already decided" and redraws the card, and `/pending` re-sends any open card. A tap that waited behind a slow update is still applied, even though Telegram refuses the late answer (AI log, phase 4).
+Telegram is the other external call. A card is only a view of the database, redrawn after the commit. If Telegram fails then, the change is already saved: the next tap answers "Already decided" and redraws the card, and `/pending` re-sends any open card.
 
 ### 12.2 Live for a month: how would I find out it's giving wrong answers before someone relies on them?
 
-Most wrong answers are visible before anyone relies on them: every card shows the verbatim sentence it rests on (checked by code, with the email one tap away), nothing changes without a tap, and the chat's quotes are checked against what its tools returned. To find the rest:
-- **Watch what's already logged.** The share of cards owners reject, "which application?" cards, quotes that failed the check, failed analyses. A rising reject rate means the classifier is drifting.
-- **Turn every Reject into a test.** A rejected card is a labelled mistake; with consent, anonymised ones go into the classifier eval.
-- **Run the model evals on a schedule** (nightly) and before any model or prompt change, with an alert on failure. A model behind the same name can change.
-- **Look at what was never read.** Sample the senders and subjects of emails the free prefilter dropped (that's all we keep of them), since a miss is otherwise invisible (12.3).
-- **Watch the plumbing.** An uptime check on `/api/health` and an alert when the cron run fails.
+Most wrong answers show up before anyone relies on them: every card shows the sentence it rests on, with the email one tap away, and nothing changes without a tap. To find the rest:
+- **Watch what's already logged:** how often owners reject cards, "which application?" cards, quotes that failed the check, failed analyses. A rising reject rate means the classifier is drifting.
+- **Turn every Reject into a test:** a rejected card is a labelled mistake; with consent, add it to the classifier eval.
+- **Run the model evals on a schedule** and before any model or prompt change, and alert on failure. A model behind the same name can change.
+- **Look at what was never read:** sample the senders and subjects of emails the prefilter dropped, since a miss is otherwise invisible.
 
 ### 12.3 Which part am I least confident in, and why?
 
-The emails it never shows. A wrong card is visible, and the owner rejects it; a missed email is invisible. Two places can drop a real job email: the free prefilter (tuned for recall, but a recruiter writing from a personal address, with a vague subject and no job words, is skipped) and the classifier calling it not job-related. The evals measure what the agent does with the emails it reads, not how many real ones it never reads, and I have no labelled inbox to measure that recall on. I would measure it by sampling what the prefilter dropped and asking a few users to flag what they missed.
+The emails it never shows. A wrong card is visible, and the owner rejects it; a missed email is invisible. Two places can drop a real job email: the free prefilter, and the classifier calling it not job-related. A recruiter writing from a personal address with a vague subject is the kind of email that slips through. The evals measure what the agent does with the emails it reads, not how many real ones it never reads. I'd measure that by sampling what the prefilter dropped and asking users to flag what they missed.
 
-Second, matching without a job ID. When a company has several applications and the email names neither the role nor the ID, the card asks which one; but a weak match by a similar company name ("Microsoft" for "Microsoft Azure") is proposed with a warning rather than asked, and a tired user may approve it.
+Second, matching without a job ID. When the email names neither the role nor an ID, the card asks which application it's about. But a match on a similar company name ("Microsoft" for "Microsoft Azure") is proposed with a warning rather than asked, and a tired user may approve it.

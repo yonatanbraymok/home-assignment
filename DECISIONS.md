@@ -48,7 +48,7 @@ How the agent was built, and why. How to try it, deploy it and configure it is i
 | **3. Action with approval** | The action: create or update an application. It runs only on a Telegram tap by the tracker's owner, as one transaction that first checks the application hasn't changed since the card was made. The approver sees the change, the reason, the verbatim quote, the sender, the date, the confidence, any warnings and a link to the email. |
 | **4. Channel** | Telegram, plus a web dashboard. Both have a chat with the same agent, sharing one conversation. The dashboard shows the pipeline and the evidence behind every status. |
 | **5. MCP** | Two read-only tools for other agents: `list_applications` and `generate_prep_brief`. Who can trigger the action through MCP: **no one** (§8). |
-| **6. Budget** | $5 of AI per person and $25 shared, checked before every model call, with notices at 80% and when used up (§6, §7). |
+| **6. Budget** | \$5 of AI per person and \$25 shared, checked before every model call, with notices at 80% and when used up (§6, §7). |
 
 ## 4. Stack and why
 
@@ -87,27 +87,27 @@ The brief allows one question; everything else is an assumption, written down he
 
 ## 6. Cost (measured)
 
-Gemini prices, checked 2026-10-07: `gemini-3.5-flash-lite` (the default) costs $0.30 per 1M input tokens and $2.50 per 1M output tokens; `gemini-3.1-flash-lite` costs $0.25 and $1.50. Every model call's real token counts are recorded in the `LlmUsage` table. Measured:
-- **Reading one job email:** about 740 tokens in and 100 out, **$0.00047**.
-- **One chat question:** 2–3 model calls, about **$0.0013** typical and **$0.0075** heavy.
+Gemini prices, checked 2026-10-07: `gemini-3.5-flash-lite` (the default) costs \$0.30 per 1M input tokens and \$2.50 per 1M output tokens; `gemini-3.1-flash-lite` costs \$0.25 and \$1.50. Every model call's real token counts are recorded in the `LlmUsage` table. Measured:
+- **Reading one job email:** about 740 tokens in and 100 out, **\$0.00047**.
+- **One chat question:** 2–3 model calls, about **\$0.0013** typical and **\$0.0075** heavy.
 
-The brief's budget is $50 a month for 5 people at 20 uses a day. Per person that's **$10 a month for 600 uses** (20 × 30 days, more than the brief's working days).
+The brief's budget is \$50 a month for 5 people at 20 uses a day. Per person that's **\$10 a month for 600 uses** (20 × 30 days, more than the brief's working days).
 
 | Per person per month | Typical | Heavy |
 |---|---|---|
-| Chat, if all 600 uses are questions | $0.78 | $4.50 |
-| Reading job emails (6 a day / 60 a day) | $0.09 | $0.85 |
-| First month only: 60 days of past email | $0.17 | $1.70 |
-| Hosting share (Vercel Hobby + Supabase Free; $4 on Vercel Pro) | $0 | $4 |
-| **Total** | **≈ $1** | **≈ $7–11** |
+| Chat, if all 600 uses are questions | \$0.78 | \$4.50 |
+| Reading job emails (6 a day / 60 a day) | \$0.09 | \$0.85 |
+| First month only: 60 days of past email | \$0.17 | \$1.70 |
+| Hosting share (Vercel Hobby + Supabase Free; \$4 on Vercel Pro) | \$0 | \$4 |
+| **Total** | **≈ \$1** | **≈ \$7–11** |
 
 Typical use is about 10% of the budget. Only every extreme at once could go over, which is why there are hard caps (§7). Telegram, Gmail and Google sign-in cost nothing.
 
 ## 7. Budget: never over silently
 
 **Two caps, checked before every model call.** A call runs only if its worst-case cost fits under both.
-- **Each person: $5 a month.** With up to $4 each for hosting, that stays under $10 per person.
-- **Shared: $25 a month** for everyone, evals included. With hosting at most $20, the total stays under $45, however many people sign up.
+- **Each person: \$5 a month.** With up to \$4 each for hosting, that stays under \$10 per person.
+- **Shared: \$25 a month** for everyone, evals included. With hosting at most \$20, the total stays under \$45, however many people sign up.
 
 **What happens as a budget fills up.** Both caps are calendar months (UTC).
 
@@ -117,7 +117,7 @@ Typical use is about 10% of the budget. Only every extreme at once could go over
 | low | from 80% | questions drop from 40 to 20 a day; emails are read with the lighter model | the person (their cap) or everyone (the shared cap); the admin also at 50% |
 | used up | when one more whole question might not fit | no questions and no new emails read; emails wait and are read after the reset | the same |
 
-- **"Used up" means a question no longer fits.** Spend never reaches 100%, because each call must fit first. So the trigger is the worst case of a whole question ($0.045): a question is never cut off halfway, and chat and email reading stop together.
+- **"Used up" means a question no longer fits.** Spend never reaches 100%, because each call must fit first. So the trigger is the worst case of a whole question (\$0.045): a question is never cut off halfway, and chat and email reading stop together.
 - **The lighter model is used for emails only.** It passed the classifier eval (24/24) but not the chat eval (11/12), so chat keeps the default model.
 - **What keeps working:** `/status`, `/pending`, approving cards and the dashboard need no AI, so they work at every level.
 - **Never silent:**
@@ -126,7 +126,7 @@ Typical use is about 10% of the budget. Only every extreme at once could go over
   - `/status` and the dashboard show the spend, where it went, and a month-end forecast.
 - **Known limits:**
   - two calls at the same moment can overshoot a cap by cents;
-  - our costs are our own count of tokens, not Google's bill. A $25 billing alert in Google Cloud is the outer safety net.
+  - our costs are our own count of tokens, not Google's bill. A \$25 billing alert in Google Cloud is the outer safety net.
 
 ## 8. MCP: what other agents can do
 
@@ -194,7 +194,7 @@ I used Claude Code as a pair programmer for planning and code.
 
 ## 11. Evals
 
-The brief asks for 5 to 10 evals: one checking an answer against the source data, one checking reasoning on a known case, and one checking a refusal. There are ten suites, run with `npm run evals`, or `npm run evals -- --all` to include the five that call the model (about $0.05 in total).
+The brief asks for 5 to 10 evals: one checking an answer against the source data, one checking reasoning on a known case, and one checking a refusal. There are ten suites, run with `npm run evals`, or `npm run evals -- --all` to include the five that call the model (about \$0.05 in total).
 
 - **An answer checked against the source data:** `eval:chat` (counts and companies against seeded rows); `eval:mcp` (every quote in a brief appears in an email).
 - **Reasoning on a known case:** `eval:classifier` (24 labelled emails, including traps and a prompt injection); `eval:demo` (11 sample emails become exactly the expected cards, and five new emails each update the right application).
@@ -209,7 +209,7 @@ The brief asks for 5 to 10 evals: one checking an answer against the source data
 | `eval:approval` | Only the owner's tap changes data. Double taps, stale and expired cards, and an ambiguous card without a choice are refused. | 9/9 |
 | `eval:review` | The first sync: one summary, then one card at a time; Later; new email isn't held back. | 6/6 |
 | `eval:account` | `/disconnect` keeps the tracker; `/delete_my_data` erases one user and no one else. | 3/3 |
-| `eval:budget` | Both caps, the levels, notices sent once, calls refused before spending. | 8/8, $0 |
+| `eval:budget` | Both caps, the levels, notices sent once, calls refused before spending. | 8/8, \$0 |
 | `eval:dashboard` | Sign-in links work once and ask to continue; cross-site sign-in is refused; each user sees only their own data; status fixes by hand. | 6/6 |
 | `eval:classifier` | Category, verbatim quote and job ID on labelled emails, including a prompt injection. | 24/24 |
 | `eval:chat` | Answers match the data; "I don't have that"; refuses to change data. | 6/6 per run |

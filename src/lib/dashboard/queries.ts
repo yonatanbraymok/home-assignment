@@ -182,34 +182,17 @@ export async function applicationDetailFor(userId: string, applicationId: string
 }
 
 /** What a new user has done so far, for the dashboard's getting-started checklist. */
-/** The latest job emails and what became of each one: the overview's "Recent activity". */
-export async function recentActivityFor(userId: string, take = 6) {
-  const emails = await db.emailMessage.findMany({
-    where: { userId, state: "CLASSIFIED", category: { not: "NOT_JOB_RELATED" } },
-    orderBy: { receivedAt: "desc" },
+/** The latest questions and answers, from either channel: the dashboard chat opens on them. */
+export async function recentChatFor(userId: string, take = 6) {
+  const rows = await db.actionLog.findMany({
+    where: { userId, action: "CHAT_ANSWERED", createdAt: { gte: new Date(Date.now() - 7 * 86_400_000) } },
+    orderBy: { id: "desc" },
     take,
-    select: {
-      id: true,
-      subject: true,
-      receivedAt: true,
-      category: true,
-      applicationId: true,
-      application: { select: { company: true } },
-      proposals: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: { state: true, toStatus: true, company: true, applicationId: true, expiresAt: true },
-      },
-    },
+    select: { id: true, createdAt: true, payload: true },
   });
-  return emails.map(({ proposals, application, ...e }) => {
-    const p = proposals[0] ?? null;
-    return {
-      ...e,
-      company: application?.company ?? p?.company ?? null,
-      applicationId: e.applicationId ?? p?.applicationId ?? null,
-      proposal: p && { state: p.state, toStatus: p.toStatus, expiresAt: p.expiresAt },
-    };
+  return rows.reverse().flatMap((r) => {
+    const p = r.payload as { question?: string; answer?: string; channel?: string } | null;
+    return p?.question && p.answer ? [{ id: String(r.id), at: r.createdAt, question: p.question, answer: p.answer, channel: p.channel === "dashboard" ? ("dashboard" as const) : ("telegram" as const) }] : [];
   });
 }
 

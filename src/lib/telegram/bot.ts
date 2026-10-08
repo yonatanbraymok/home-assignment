@@ -16,7 +16,7 @@ import { breakdownOf, forecastUsd } from "@/lib/llm/budget-policy";
 import { quietly, refreshCard, renderCardById, sendCard } from "@/lib/proposals/cards-io";
 import { approveProposal, rejectProposal } from "@/lib/proposals/decide";
 import { START_REVIEW_DATA } from "@/lib/proposals/past-emails";
-import { continueReview, deferReviewCard, finishBackfill, showNextReviewCard } from "@/lib/proposals/review";
+import { backfillNoticeKey, continueReview, deferReviewCard, finishBackfill, showNextReviewCard } from "@/lib/proposals/review";
 import { READ_TOOLS } from "@/lib/tools/read";
 import { ensureBudgetNotices } from "./budget-notices";
 import {
@@ -295,6 +295,14 @@ function registerHandlers(bot: Bot) {
     await ctx.replyWithChatAction("typing");
     const analysis = await analyzePendingEmails(user.id, ANALYZE_PER_SYNC);
     await ctx.reply(syncReplyText(synced, analysis, await notYetRead(user.id)));
+    // This reply already says the review comes once everything is read: no separate "started" notice.
+    const fresh = await db.user.findUnique({ where: { id: user.id }, select: { gmailConnectedAt: true, backfillDoneAt: true } });
+    if (fresh?.gmailConnectedAt && !fresh.backfillDoneAt) {
+      await db.actionLog.createMany({
+        data: [{ userId: user.id, actor: "SYSTEM", action: "BACKFILL_STARTED", dedupeKey: backfillNoticeKey(user.id, fresh.gmailConnectedAt) }],
+        skipDuplicates: true,
+      });
+    }
     await quietly("review summary", finishBackfill(user.id));
     await quietly("budget notices", ensureBudgetNotices({ recipients: [user.id] }));
   });

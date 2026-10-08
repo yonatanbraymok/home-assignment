@@ -6,7 +6,7 @@ import { requireEnv } from "@/lib/env";
 import { syncAllMailboxes } from "@/lib/gmail/sync";
 import { quietly } from "@/lib/proposals/cards-io";
 import { expireOverdueProposals } from "@/lib/proposals/expire";
-import { finishBackfill } from "@/lib/proposals/review";
+import { announceBackfill, finishBackfill } from "@/lib/proposals/review";
 import { ensureBudgetNotices } from "@/lib/telegram/budget-notices";
 
 export const maxDuration = 60;
@@ -39,6 +39,8 @@ export async function POST(req: Request) {
     try {
       analyzed.push({ userId, ...(await analyzePendingEmails(userId, ANALYZE_PER_USER, { deadline: startedAt + TOTAL_BUDGET_MS })) });
       await quietly("review summary", finishBackfill(userId));
+      // Still reading past emails: say so once, so the first sync isn't silent until the summary.
+      await quietly("backfill notice", announceBackfill(userId));
     } catch (err) {
       // Details go to the server log only; the response must not carry internals.
       console.error(`analysis failed for user ${userId}:`, err instanceof Error ? err.message : err);

@@ -1,8 +1,8 @@
 import { InlineKeyboard } from "grammy";
 import { db } from "@/lib/db";
 import { NOT_YET_READ } from "@/lib/agent/queue";
-import { reviewDoneReply, reviewReadyText } from "@/lib/telegram/messages";
-import { telegramApi } from "@/lib/telegram/notify";
+import { backfillStartedText, reviewDoneReply, reviewReadyText } from "@/lib/telegram/messages";
+import { notifyOnce, telegramApi } from "@/lib/telegram/notify";
 import { quietly, sendCard } from "./cards-io";
 import { START_REVIEW_DATA, summarize, type ReviewSummary } from "./past-emails";
 import { PROPOSAL_TTL_MS, reviewQueueWhere } from "./rules";
@@ -49,6 +49,30 @@ export async function finishBackfill(userId: string): Promise<ReviewSummary | nu
     }),
   );
   return summary;
+}
+
+/**
+ * "I've started reading": once per Gmail connection, when the first read of past emails is under
+ * way and found something job-related. Until the summary, the first sync is otherwise silent.
+ */
+export async function announceBackfill(userId: string): Promise<void> {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { gmailConnectedAt: true, backfillDoneAt: true, telegramChatId: true } });
+  if (!user?.gmailConnectedAt || user.backfillDoneAt) return;
+  const jobEmails = await db.emailMessage.count({ where: { userId, state: { not: "PREFILTERED_OUT" }, receivedAt: { lt: user.gmailConnectedAt } } });
+  if (!jobEmails) return;
+  await notifyOnce({
+    userId,
+    telegramChatId: user.telegramChatId,
+    dedupeKey: backfillNoticeKey(userId, user.gmailConnectedAt),
+    action: "BACKFILL_STARTED",
+    actor: "SYSTEM",
+    text: backfillStartedText(jobEmails),
+  });
+}
+
+/** One notice per connection; /sync records it too, since its own reply already says as much. */
+export function backfillNoticeKey(userId: string, connectedAt: Date): string {
+  return `backfill-started:${userId}:${connectedAt.getTime()}`;
 }
 
 export type NextCard = { kind: "shown" | "open"; proposalId: string } | { kind: "done" } | { kind: "reading" };

@@ -308,6 +308,11 @@ export function reviewReadyText(s: ReviewSummary): string {
   ].join("\n");
 }
 
+/** Sent once per Gmail connection, when the first read of past emails gets going (sync can be silent otherwise). */
+export function backfillStartedText(jobEmails: number): string {
+  return `📥 I've started reading your job emails from the last 60 days: ${plural(jobEmails, "email")} so far ${jobEmails === 1 ? "looks" : "look"} job-related. When I've read them all, I'll send you one summary, then show you what I found, one card at a time. A busy inbox can take up to an hour; you don't need to do anything meanwhile.`;
+}
+
 export const REVIEW_DONE_TEXT = "✅ That's everything from your past emails. From now on, I'll send a card as soon as a new job email arrives.";
 
 export const STILL_READING_TEXT = "I'm still reading your past emails. When I'm done, I'll show you what I found, one card at a time.";

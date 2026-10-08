@@ -91,6 +91,7 @@ enum ActionType {
   DASHBOARD_LOGIN // a /dashboard sign-in link was used; its unique dedupeKey makes each link work once
   MCP_TOKEN_CREATED // the owner created (or replaced) their MCP token in the dashboard
   MCP_TOKEN_REVOKED
+  BACKFILL_STARTED // the one "I've started reading your past emails" notice per Gmail connection
 }
 
 enum LlmPurpose {

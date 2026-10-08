@@ -66,7 +66,7 @@ export function welcomeText(opts: { firstName: string; isNew: boolean; gmailAddr
     "",
     "Three steps:",
     "1. /connect your Gmail. Read-only: I can never send, delete or change anything.",
-    "2. I read your job emails from the last 60 days on my own, within minutes (/sync starts it right away).",
+    "2. From then on, I read each new job email as it arrives (I check every 5 minutes; /sync checks now).",
     "3. Review what I found. Each card quotes the email it's based on, and nothing changes until you tap Approve.",
     "",
     "Just looking around? /demo shows me at work on sample emails, no Gmail needed.",
@@ -81,7 +81,7 @@ export function helpText(): string {
     "",
     "When a job email arrives, I send you a card: what changed, the sentence in the email that shows it, and how sure I am. Nothing changes until you tap Approve. A card expires after 7 days.",
     "",
-    "Right after you connect, I read your past emails, then show what I found one card at a time. ⏭ Later moves a card to the end; /pending picks up where you stopped.",
+    "I track from the moment you connect: emails from before that aren't read. ⏭ Later moves a card to the end; /pending shows the cards waiting for you.",
     "",
     "I check your inbox every 5 minutes. /sync checks right now.",
     "",
@@ -143,9 +143,9 @@ export function gmailConnectedText(address: string, endedDemo = false): string {
     "I can only read: I can never send, delete or change anything.",
     ...(endedDemo ? ["The demo is over: I removed its sample emails."] : []),
     "",
-    "What happens now: within 5 minutes I start reading your job emails from the last 60 days, on my own. When I've read them all, I'll send you one summary, then show you what I found, one card at a time. A busy inbox can take up to an hour.",
+    "Tracking starts now: I don't read emails from before this moment. I check your inbox every 5 minutes, and each new job email gets a card as it arrives. /sync checks right away.",
     "",
-    "Want me to start right now? Send /sync. After that, I check your inbox every 5 minutes, and new job emails get a card as they arrive.",
+    "Try it: email yourself something a recruiter would send, e.g. \"We'd like to invite you to an interview for the Backend Intern role.\"",
   ].join("\n");
 }
 

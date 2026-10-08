@@ -284,16 +284,18 @@ function registerHandlers(bot: Bot) {
       return ctx.reply(SYNC_COOLDOWN_TEXT);
     }
     await ctx.replyWithChatAction("typing");
+    const startedAt = Date.now();
     let synced: Awaited<ReturnType<typeof syncMailbox>>;
     try {
-      synced = await syncMailbox(user);
+      // The update has 55 s: up to 15 s of fetching, then reading until 45 s, then the reply.
+      synced = await syncMailbox(user, { deadline: startedAt + 15_000 });
     } catch (err) {
       if (err instanceof GmailAccessRevoked) return ctx.reply(err.message);
       console.error("/sync failed:", err instanceof Error ? err.message : err);
       return ctx.reply(GMAIL_UNREACHABLE_TEXT);
     }
     await ctx.replyWithChatAction("typing");
-    const analysis = await analyzePendingEmails(user.id, ANALYZE_PER_SYNC);
+    const analysis = await analyzePendingEmails(user.id, ANALYZE_PER_SYNC, { deadline: startedAt + 45_000 });
     await ctx.reply(syncReplyText(synced, analysis, await notYetRead(user.id)));
     // This reply already says the review comes once everything is read: no separate "started" notice.
     const fresh = await db.user.findUnique({ where: { id: user.id }, select: { gmailConnectedAt: true, backfillDoneAt: true } });

@@ -1,6 +1,6 @@
 import type { gmail_v1 } from "@googleapis/gmail";
 import { db } from "@/lib/db";
-import type { User } from "@/generated/prisma/client";
+import type { Prisma, User } from "@/generated/prisma/client";
 import { notifyOnce } from "@/lib/telegram/notify";
 import { gmailForUser, isRevokedGrant } from "./oauth";
 import { parseMessage } from "./parse";
@@ -11,8 +11,12 @@ const BACKFILL_DAYS = 60;
 const OVERLAP_MS = 10 * 60_000;
 // Upper bound on IDs listed per run. A first backfill beyond this keeps only the newest ones.
 const LIST_CAP = 5000;
-// Full messages fetched per user per run; a large backfill continues on the next runs.
-const FETCH_PER_RUN = 100;
+// Full messages are fetched in chunks of 100 until the run's deadline, at most 1,000 per run; a
+// larger backfill continues on the next runs. (A fixed 100 per run made a busy inbox's first sync
+// take ten runs, close to an hour, though only a few percent of it is job mail.)
+const FETCH_CHUNK = 100;
+const FETCH_MAX_PER_RUN = 1000;
+const DEFAULT_FETCH_MS = 20_000;
 const FETCH_CONCURRENCY = 10;
 // Gmail search: skip what can't be an application update. Sent mail is filtered in the prefilter
 // instead of here: "-in:sent" would also drop mail you send to yourself.
@@ -26,9 +30,11 @@ export type SyncSummary = { fetched: number; candidates: number; skipped: number
 
 type SyncableUser = Pick<User, "id" | "gmailRefreshTokenEnc" | "gmailLastSyncAt">;
 
-export async function syncMailbox(user: SyncableUser): Promise<SyncSummary> {
+/** `deadline` (epoch ms): stop starting new chunks after it; the rest is fetched next time. */
+export async function syncMailbox(user: SyncableUser, opts: { deadline?: number } = {}): Promise<SyncSummary> {
   if (!user.gmailRefreshTokenEnc) throw new Error("Gmail is not connected");
   const startedAt = new Date();
+  const deadline = opts.deadline ?? startedAt.getTime() + DEFAULT_FETCH_MS;
   const since = user.gmailLastSyncAt
     ? new Date(user.gmailLastSyncAt.getTime() - OVERLAP_MS)
     : new Date(startedAt.getTime() - BACKFILL_DAYS * 86_400_000);
@@ -42,7 +48,7 @@ export async function syncMailbox(user: SyncableUser): Promise<SyncSummary> {
     });
     const knownIds = new Set(known.map((k) => k.gmailMessageId));
     const fresh = ids.filter((id) => !knownIds.has(id));
-    const batch = fresh.slice(0, FETCH_PER_RUN);
+    const batch = fresh.slice(0, FETCH_MAX_PER_RUN);
 
     const trackedDomains = (
       await db.jobApplication.findMany({
@@ -52,31 +58,39 @@ export async function syncMailbox(user: SyncableUser): Promise<SyncSummary> {
       })
     ).flatMap((a) => (a.companyDomain ? [a.companyDomain] : []));
 
-    const messages = await mapLimit(batch, FETCH_CONCURRENCY, (id) => fetchMessage(gmail, id));
-    const rows = messages.flatMap((msg) => {
-      if (!msg) return [];
-      const email = parseMessage(msg);
-      const { candidate } = prefilter(email, trackedDomains);
-      return [
-        {
-          userId: user.id,
-          gmailMessageId: email.gmailMessageId,
-          gmailThreadId: email.gmailThreadId,
-          fromAddress: email.fromAddress,
-          fromName: email.fromName,
-          subject: email.subject,
-          receivedAt: email.receivedAt,
-          // For mail that isn't job-related we keep only sender + subject (to dedupe and to audit
-          // the prefilter), never its content.
-          snippet: candidate ? email.snippet : "",
-          bodyText: candidate ? email.bodyText : null,
-          state: candidate ? ("NEW" as const) : ("PREFILTERED_OUT" as const),
-        },
-      ];
-    });
-    await db.emailMessage.createMany({ data: rows, skipDuplicates: true });
+    const rows: Prisma.EmailMessageCreateManyInput[] = [];
+    let done = 0;
+    while (done < batch.length && (done === 0 || Date.now() < deadline)) {
+      const chunk = batch.slice(done, done + FETCH_CHUNK);
+      const messages = await mapLimit(chunk, FETCH_CONCURRENCY, (id) => fetchMessage(gmail, id));
+      const chunkRows = messages.flatMap((msg) => {
+        if (!msg) return [];
+        const email = parseMessage(msg);
+        const { candidate } = prefilter(email, trackedDomains);
+        return [
+          {
+            userId: user.id,
+            gmailMessageId: email.gmailMessageId,
+            gmailThreadId: email.gmailThreadId,
+            fromAddress: email.fromAddress,
+            fromName: email.fromName,
+            subject: email.subject,
+            receivedAt: email.receivedAt,
+            // For mail that isn't job-related we keep only sender + subject (to dedupe and to audit
+            // the prefilter), never its content.
+            snippet: candidate ? email.snippet : "",
+            bodyText: candidate ? email.bodyText : null,
+            state: candidate ? ("NEW" as const) : ("PREFILTERED_OUT" as const),
+          },
+        ];
+      });
+      // Saved chunk by chunk, so a run cut short keeps what it fetched.
+      await db.emailMessage.createMany({ data: chunkRows, skipDuplicates: true });
+      rows.push(...chunkRows);
+      done += chunk.length;
+    }
 
-    const remaining = fresh.length - batch.length;
+    const remaining = fresh.length - done;
     await db.user.update({
       where: { id: user.id },
       // Only move the sync window forward once everything listed has been fetched.
@@ -108,7 +122,7 @@ export async function syncAllMailboxes(budgetMs: number): Promise<MailboxRunResu
   for (const user of users) {
     if (Date.now() > deadline) break; // the rest go first on the next run
     try {
-      results.push({ userId: user.id, ok: true, summary: await syncMailbox(user) });
+      results.push({ userId: user.id, ok: true, summary: await syncMailbox(user, { deadline }) });
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       // Only the known, user-facing reason goes into the response; details stay in the log.

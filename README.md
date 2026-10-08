@@ -23,8 +23,8 @@ Disclosure: The demo does not keep at with the platform's feature, and does not 
 
 1. Send **/start**, then **/connect**, and tap **Connect Gmail**. Access is read-only: the agent can never send, delete or change an email.
    Google warns *"Google hasn't verified this app"*. The app is published but not verified, so choose **Advanced → Go to Job Hunt Tracker**.
-2. Send **/sync**. The bot reads the last 60 days, sends one summary, then shows what it found one card at a time.
-3. To see a live card, email yourself something a recruiter would send (or forward one), e.g. *"We'd like to invite you to an interview for the Backend Intern role."* The bot checks Gmail every 5 minutes; **/sync** checks right away.
+2. Tracking starts the moment you connect: emails from before that aren't read. The bot checks Gmail every 5 minutes; **/sync** checks right away.
+3. To see a card, email yourself something a recruiter would send (or forward one), e.g. *"We'd like to invite you to an interview for the Backend Intern role."*
 
 ## How action approval works for testers (who approves, and where)
 

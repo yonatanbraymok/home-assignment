@@ -51,17 +51,18 @@ export async function GET(req: Request) {
 
   // Real email ends the demo: sample and real emails never mix.
   if (user.demoAt) await resetDemo(userId);
-  const switchedAccount = user.gmailAddress !== address;
+  // Tracking starts now: past emails aren't read (60 days of a real inbox was too slow for one
+  // run), so there's no review of past emails; new job emails get a card as they arrive.
+  const now = new Date();
   await db.user.update({
     where: { id: userId },
     data: {
       gmailAddress: address,
       gmailRefreshTokenEnc: encrypt(tokens.refresh_token),
-      gmailConnectedAt: new Date(),
+      gmailConnectedAt: now,
+      gmailLastSyncAt: now,
+      backfillDoneAt: now,
       gmailSyncError: null,
-      backfillDoneAt: null, // emails from before now are read first and reviewed one at a time
-      // A different mailbox starts with a fresh 60-day backfill.
-      ...(switchedAccount ? { gmailLastSyncAt: null } : {}),
     },
   });
 

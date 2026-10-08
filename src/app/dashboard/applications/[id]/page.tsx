@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { ArrowLeft, ExternalLink, ShieldCheck, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, ShieldCheck, TriangleAlert } from "lucide-react";
 import { STATUS_DOT, StatusBadge } from "@/components/status-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import { STATUS_DESCRIPTION } from "@/lib/proposals/rules";
 import { cn } from "@/lib/utils";
 import { CATEGORY_LABEL, capitalize, humanReason } from "../../labels";
 import { OutcomeBadge, describeChange } from "../../proposal-badges";
+import { StatusEditor } from "./status-editor";
 
 export default function ApplicationPage(props: PageProps<"/dashboard/applications/[id]">) {
   return (
@@ -40,8 +41,17 @@ async function Detail({ params }: Pick<PageProps<"/dashboard/applications/[id]">
   if (!detail) return <p>This application doesn&apos;t exist, or it isn&apos;t yours.</p>;
   await connection(); // request time: outcomes compare expiry dates with now
   const now = new Date();
-  const { user, application: a, timeline } = detail;
-  const newestFirst = [...timeline].reverse();
+  const { user, application: a, timeline, edits } = detail;
+  // Emails and the owner's own changes, newest first.
+  type Entry = { at: Date; email: DetailData["timeline"][number] } | { at: Date; edit: DetailData["edits"][number] };
+  const newestFirst: Entry[] = [
+    ...timeline.map((item) => ({ at: item.email.receivedAt, email: item })),
+    ...edits.map((edit) => ({ at: edit.at, edit })),
+  ].sort((x, y) => y.at.getTime() - x.at.getTime());
+  const newestEmail = timeline.at(-1)?.email.id;
+  const waitingCards = timeline.filter(
+    (t) => t.proposal && (t.proposal.state === "PENDING" || t.proposal.state === "FAILED") && (!t.proposal.expiresAt || t.proposal.expiresAt > now),
+  ).length;
   return (
     <>
       <Card>
@@ -58,6 +68,9 @@ async function Detail({ params }: Pick<PageProps<"/dashboard/applications/[id]">
             {capitalize(STATUS_DESCRIPTION[a.status])} since {formatDay(a.statusSince)}
             {a.appliedAt && ` · applied ${formatDay(a.appliedAt)}`} · {a.source === "EMAIL" ? "added from an email you approved" : "added by hand"}
           </p>
+          <div className="mt-2">
+            <StatusEditor applicationId={a.id} status={a.status} waitingCards={waitingCards} />
+          </div>
         </CardContent>
       </Card>
 
@@ -65,8 +78,8 @@ async function Detail({ params }: Pick<PageProps<"/dashboard/applications/[id]">
         <CardHeader>
           <CardTitle className="text-lg font-semibold">Timeline</CardTitle>
           <CardDescription>
-            Newest first. Each step is an email, what the agent concluded, the exact sentence it relied on, and your decision. A quote is
-            checked word for word against the email before anything is proposed.
+            Newest first. Each step is an email, what the agent concluded, the exact sentence it relied on, and your decision, or a change you
+            made by hand. A quote is checked word for word against the email before anything is proposed.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -74,14 +87,40 @@ async function Detail({ params }: Pick<PageProps<"/dashboard/applications/[id]">
             <p className="text-sm text-muted-foreground">No emails are linked to this application yet.</p>
           ) : (
             <ol className="mt-2 ml-2 border-l border-border">
-              {newestFirst.map((item, i) => (
-                <TimelineItem key={item.email.id} item={item} latest={i === 0} gmailAddress={user.gmailAddress} now={now} />
-              ))}
+              {newestFirst.map((entry) =>
+                "edit" in entry ? (
+                  <EditItem key={`edit-${entry.edit.id}`} edit={entry.edit} />
+                ) : (
+                  <TimelineItem key={entry.email.email.id} item={entry.email} latest={entry.email.email.id === newestEmail} gmailAddress={user.gmailAddress} now={now} />
+                ),
+              )}
             </ol>
           )}
         </CardContent>
       </Card>
     </>
+  );
+}
+
+/** A status the owner set by hand in the dashboard. */
+function EditItem({ edit }: { edit: DetailData["edits"][number] }) {
+  return (
+    <li className="relative pb-10 pl-6 last:pb-0">
+      <span className={cn("absolute top-1 -left-[7px] size-3.5 rounded-full ring-4 ring-card", STATUS_DOT[edit.to])} aria-hidden />
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <time dateTime={edit.at.toISOString()} className="font-medium tabular-nums">
+          {formatDateTime(edit.at)}
+        </time>
+        <Badge variant="secondary">
+          <Pencil data-icon="inline-start" />
+          Changed by you
+        </Badge>
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <StatusBadge status={edit.from} /> → <StatusBadge status={edit.to} />
+        </span>
+      </div>
+      <p className="mt-2 text-sm text-muted-foreground">Set by hand in the dashboard, not from an email.</p>
+    </li>
   );
 }
 

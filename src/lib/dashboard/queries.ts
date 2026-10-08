@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { statusEditsFor } from "./edit";
 import type { ApplicationStatus, Confidence } from "@/generated/prisma/enums";
 import type { Candidate } from "@/lib/proposals/create";
 import { waitingForDecisionWhere } from "@/lib/proposals/rules";
@@ -158,6 +159,7 @@ export async function applicationDetailFor(userId: string, applicationId: string
     }),
     statusStartDates(userId, [application.id]),
   ]);
+  const edits = await statusEditsFor(userId, application.id);
   // The newest proposal per email (normally the only one).
   const proposalFor = new Map(proposals.map((p) => [p.emailId, { ...p, candidates: (p.candidates as Candidate[] | null) ?? null }]));
 
@@ -178,7 +180,7 @@ export async function applicationDetailFor(userId: string, applicationId: string
       noProposalReason: proposal ? null : (a.noProposalReason ?? null),
     };
   });
-  return { application: { ...application, statusSince: statusSince(application) }, timeline };
+  return { application: { ...application, statusSince: statusSince(application) }, timeline, edits };
 }
 
 /** What a new user has done so far, for the dashboard's getting-started checklist. */

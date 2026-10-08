@@ -151,7 +151,7 @@ export function ApplicationsCard({ rows, className }: { rows: ApplicationRow[]; 
                 </TableBody>
               </Table>
               <p className="border-t px-4 py-3 text-xs text-muted-foreground">
-                Open an application for its timeline: each email, the sentence the agent relied on, and your decision.
+                Open an application for its timeline (each email, the sentence the agent relied on, your decision), or to correct its status by hand.
               </p>
             </div>
           </>

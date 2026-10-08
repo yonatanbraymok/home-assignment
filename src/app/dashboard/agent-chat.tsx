@@ -54,7 +54,7 @@ export function AgentChat({ initial, className }: { initial: ChatTurn[]; classNa
       </CardHeader>
 
       <CardContent className="flex min-h-0 flex-1 flex-col px-0">
-        <div className="h-80 flex-1 overflow-y-auto px-4 py-4 lg:h-auto lg:max-h-[34rem] lg:min-h-80" aria-live="polite">
+        <div className="h-80 flex-1 overflow-y-auto px-4 py-4 lg:h-0 lg:min-h-72" aria-live="polite">
           {turns.length === 0 && !asking ? (
             <div className="flex flex-col gap-3">
               <p className="text-sm text-muted-foreground">Ask about your applications in plain words, in English or Hebrew. For example:</p>
@@ -124,7 +124,7 @@ export function AgentChat({ initial, className }: { initial: ChatTurn[]; classNa
             {pending ? <Send className="motion-safe:animate-pulse" /> : <ArrowUp />}
           </Button>
         </form>
-        <p className="text-xs text-muted-foreground">The agent reads only. Changes come from the cards you approve in Telegram.</p>
+        <p className="text-xs text-muted-foreground">The agent only reads: it can&apos;t change your tracker.</p>
       </CardFooter>
     </Card>
   );

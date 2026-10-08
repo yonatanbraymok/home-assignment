@@ -17,8 +17,8 @@ import { ApplicationsCard, type ApplicationRow } from "./applications-table";
 import { WaitingBadge, describeChange } from "./proposal-badges";
 import { WaitingSlides } from "./waiting-slides";
 
-// The overview, as a bento grid of cards: budget and totals across the top, the pipeline on the
-// left, and on the right what waits for the owner and a chat with the agent. Read-only: approving
+// The overview, as a bento grid of cards: budget and totals beside what waits for the owner, then
+// the pipeline beside a chat with the agent. Read-only: approving
 // and rejecting stay in Telegram, so there are no buttons for them here.
 export default function DashboardPage() {
   return (
@@ -46,20 +46,17 @@ async function Overview() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">Applications</h1>
-        <p className="text-sm text-muted-foreground">Kept up to date from your inbox. Every change is approved by you, in Telegram.</p>
+        <p className="text-sm text-muted-foreground">Kept up to date from your inbox: the agent proposes, you approve in Telegram. Missed something? Correct it on the application.</p>
       </div>
       <GmailNotice user={user} />
 
-      {/* Phones get one column in reading order; from lg the pipeline spans two columns and the
-          right column has what waits for you above the chat with the agent, which takes the rest. */}
-      <div className="grid gap-4 lg:grid-cols-3 lg:grid-rows-[auto_auto_1fr]">
-        <SummaryCard data={data} className="lg:col-span-3" />
-        <WaitingCard waiting={data.waiting} className="lg:col-start-3 lg:row-start-2" />
-        <ApplicationsCard rows={rows} className="lg:col-span-2 lg:col-start-1 lg:row-span-2 lg:row-start-2" />
-        <AgentChat
-          initial={data.chat.map((t) => ({ ...t, at: t.at.toISOString() }))}
-          className="lg:col-start-3 lg:row-start-3"
-        />
+      {/* Two rows. Top: the totals, and what waits for your decision. Below: the pipeline, and the
+          chat with the agent in its own column, as tall as the pipeline. Phones: one column. */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <SummaryCard data={data} className="lg:col-span-2" />
+        <WaitingCard waiting={data.waiting} />
+        <ApplicationsCard rows={rows} className="lg:col-span-2" />
+        <AgentChat initial={data.chat.map((t) => ({ ...t, at: t.at.toISOString() }))} />
       </div>
     </div>
   );
@@ -71,9 +68,9 @@ function SummaryCard({ data, className }: { data: OverviewData; className?: stri
   const { stats } = data;
   return (
     <Card className={className}>
-      <CardContent className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+      <CardContent className="grid h-full gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-center">
         <BudgetMonitor budget={data.budget} forecastUsd={data.forecastUsd} />
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4 md:border-l md:pl-6">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4 md:border-l md:pl-6 lg:grid-cols-2">
           <Stat label="Tracked" value={stats.total} note={stats.response_rate_percent === null ? "none yet" : `${stats.response_rate_percent}% got a reply`} />
           <Stat label="In progress" value={stats.open} note={`${stats.no_reply_yet} waiting for a reply`} />
           <Stat label="Interviews" value={stats.by_status.INTERVIEW ?? 0} note={plural(stats.by_status.ASSESSMENT ?? 0, "online assessment")} />

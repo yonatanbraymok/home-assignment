@@ -1,7 +1,8 @@
 // Eval: dashboard sign-in and data scoping. A /dashboard link signs in once (no respelling of it
 // gets past that); expired, wrong-purpose and garbled links are refused; one user can never read
 // another's data; the status date is the email's, not the day of the tap. Then the same over HTTP
-// against the running app: the real cookie flags, "already used", HEAD not using a link, only the
+// against the running app: opening a link only asks "continue as …?", a cross-site post is refused,
+// the real cookie flags, "already used", HEAD not using a link, only the
 // signed-in user's data on every page, the evidence on the timeline, a crafted ?login= value,
 // signed-out redirects, log out, and a deleted account's cookie.
 // Throwaway users, deleted at the end. Needs the app running at APP_URL (EVAL_SKIP_HTTP=1 to skip
@@ -12,7 +13,9 @@ import { db } from "@/lib/db";
 import { signToken } from "@/lib/crypto";
 import { redeemLoginLink } from "@/lib/auth/login";
 import { SESSION_COOKIE, loginLink, loginLinkFingerprint, newSessionToken } from "@/lib/auth/tokens";
+import { editApplicationStatus } from "@/lib/dashboard/edit";
 import { applicationDetailFor, findSessionUser, overviewFor } from "@/lib/dashboard/queries";
+import { approveProposal } from "@/lib/proposals/decide";
 
 const A_TG = BigInt(7_000_000_501), B_TG = BigInt(7_000_000_502);
 const TELEGRAM_IDS = [A_TG, B_TG];
@@ -138,7 +141,29 @@ async function main() {
     throw new Error(`Nothing answers at ${base}: start the app (npm run dev), or set EVAL_SKIP_HTTP=1 to skip the HTTP checks`);
   }
 
-  // 5. Deleting the account ends its links (a later /start gets a new user id).
+  // 5. Correcting a status by hand: only from the status the page showed, only your own application,
+  // recorded, on the timeline, and a card still waiting for that application no longer applies.
+  const card = await db.statusProposal.findFirstOrThrow({ where: { userId: a.user.id, state: "PENDING" } }); // Applied → Interview
+  assert.deepEqual(await editApplicationStatus(b.user.id, a.app.id, "APPLIED", "REJECTED"), { kind: "not-found" }, "someone else's application");
+  assert.deepEqual(await editApplicationStatus(a.user.id, a.app.id, "INTERVIEW", "OFFER"), { kind: "changed-meanwhile" }, "a stale page");
+  assert.deepEqual(await editApplicationStatus(a.user.id, a.app.id, "APPLIED", "APPLIED"), { kind: "unchanged" });
+  assert.deepEqual(await editApplicationStatus(a.user.id, a.app.id, "APPLIED", "ASSESSMENT"), { kind: "saved" });
+  const edited = await applicationDetailFor(a.user.id, a.app.id);
+  assert.equal(edited?.application.status, "ASSESSMENT");
+  assert.deepEqual(edited?.edits.map((e) => `${e.from} → ${e.to}`), ["APPLIED → ASSESSMENT"]);
+  assert.ok(Date.now() - edited!.application.statusSince.getTime() < 60_000, "since: the moment of the change");
+  assert.equal((await approveProposal(card.id, A_TG)).kind, "stale", "the waiting card no longer applies");
+  // A second same-title application waiting for a reply is refused (A13), not a crash.
+  const twin = await db.jobApplication.create({
+    data: { userId: a.user.id, company: "Wix", roleTitle: "SWE Intern", dedupeKey: "wix|swe intern", status: "REJECTED", source: "MANUAL" },
+  });
+  await editApplicationStatus(a.user.id, a.app.id, "ASSESSMENT", "APPLIED");
+  assert.deepEqual(await editApplicationStatus(a.user.id, twin.id, "REJECTED", "APPLIED"), { kind: "duplicate" });
+  await db.jobApplication.delete({ where: { id: twin.id } });
+  console.log("✔ a status corrected by hand: own applications only, from the shown status, recorded on the timeline; a waiting card then doesn't apply");
+  passed++;
+
+  // 6. Deleting the account ends its links (a later /start gets a new user id).
   const linkB = loginLink(b.user.id);
   await db.user.delete({ where: { id: b.user.id } });
   assert.deepEqual(await redeemLoginLink(tokenOf(linkB)), { status: "expired" });
@@ -146,7 +171,7 @@ async function main() {
   console.log("✔ after the account is deleted, its links are refused");
   passed++;
 
-  console.log(`\n${passed}/5 passed${httpSkipped ? ", 1 skipped" : ""}`);
+  console.log(`\n${passed}/6 passed${httpSkipped ? ", 1 skipped" : ""}`);
 }
 
 type Seeded = Awaited<ReturnType<typeof seed>>;
@@ -156,24 +181,39 @@ async function httpChecks(base: string, a: Seeded, b: Seeded) {
   const page = async (path: string, cookie?: string) => (await get(path, cookie)).text();
   const location = (r: Response) => new URL(r.headers.get("location")!, base);
 
-  // HEAD (link checkers) doesn't use a link up; the first GET signs in and sets the cookie.
+  // Opening the link signs nobody in: it leads to a page that names the account and asks to continue.
   const link = loginLink(a.user.id);
   assert.equal((await fetch(link, { method: "HEAD", redirect: "manual" })).status, 200);
-  const first = await fetch(link, { redirect: "manual" });
+  const opened = await fetch(link, { redirect: "manual" });
+  assert.equal(opened.status, 303);
+  assert.equal(location(opened).pathname, "/sign-in");
+  assert.equal(opened.headers.getSetCookie().length, 0, "opening the link sets no cookie");
+  assert.ok((await page(`/sign-in${location(opened).search}`)).includes("Continue as Eval Alice"));
+
+  // Continuing posts the link back. From another site that's refused, and the link stays unused.
+  const post = (token: string, headers: Record<string, string> = {}) => {
+    const form = new FormData();
+    form.append("t", token);
+    return fetch(new URL("/api/auth/login", base), { method: "POST", body: form, redirect: "manual", headers: { origin: new URL(base).origin, ...headers } });
+  };
+  assert.equal((await post(tokenOf(link), { origin: "https://elsewhere.example" })).status, 403, "a cross-site post is refused");
+  const first = await post(tokenOf(link));
   assert.equal(first.status, 303);
   assert.equal(location(first).pathname, "/dashboard");
   const setCookie = first.headers.getSetCookie().find((c) => c.startsWith(`${SESSION_COOKIE}=`));
-  assert.ok(setCookie, "the sign-in response sets the session cookie");
+  assert.ok(setCookie, "continuing sets the session cookie");
   for (const flag of [/HttpOnly/i, /SameSite=lax/i, /Max-Age=604800/, /Path=\//]) assert.match(setCookie, flag);
   assert.equal(/;\s*Secure/i.test(setCookie), base.startsWith("https://"));
   const alice = setCookie.split(";")[0];
   const bob = `${SESSION_COOKIE}=${newSessionToken(b.user.id)}`;
 
   // The same link again: refused, unless this browser is the one it already signed in.
-  assert.equal(location(await fetch(link, { redirect: "manual" })).search, "?login=used");
+  assert.equal(location(await post(tokenOf(link))).search, "?login=used");
+  assert.equal(location(await post(tokenOf(link), { cookie: alice })).pathname, "/dashboard");
+  assert.equal(location(await post(tokenOf(link), { cookie: bob })).search, "?login=used", "someone else's session doesn't count");
+  assert.equal(location(await post(`${tokenOf(link)}.`)).search, "?login=expired");
+  assert.equal(location(await fetch(link, { redirect: "manual" })).search, "?login=used", "opening a used link says so");
   assert.equal(location(await fetch(link, { redirect: "manual", headers: { cookie: alice } })).pathname, "/dashboard");
-  assert.equal(location(await fetch(link, { redirect: "manual", headers: { cookie: bob } })).search, "?login=used", "someone else's session doesn't count");
-  assert.equal(location(await fetch(`${link}.`, { redirect: "manual" })).search, "?login=expired");
 
   // Signed in: Alice's data only, with the budget in the header.
   const overview = await page("/dashboard", alice);
@@ -218,7 +258,7 @@ async function httpChecks(base: string, a: Seeded, b: Seeded) {
   // Recreate Bob for step 5, which checks his links.
   Object.assign(b, await seed(B_TG, "Eval Bob", "Monday"));
 
-  console.log("✔ HTTP: cookie flags; HEAD keeps the link; used once (same browser continues, others don't); only Alice's data; timeline shows the quotes and decisions; ?login=toString is safe; signed-out redirect; log out; a deleted account's cookie is refused");
+  console.log("✔ HTTP: opening a link signs nobody in (it asks to continue, as whom); a cross-site post is refused; cookie flags; HEAD keeps the link; used once (same browser continues, others don't); only Alice's data; timeline shows the quotes and decisions; ?login=toString is safe; signed-out redirect; log out; a deleted account's cookie is refused");
 }
 
 async function cleanup() {

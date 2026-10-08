@@ -66,7 +66,7 @@ export function welcomeText(opts: { firstName: string; isNew: boolean; gmailAddr
     "",
     "Three steps:",
     "1. /connect your Gmail. Read-only: I can never send, delete or change anything.",
-    "2. /sync to read your job emails from the last 60 days.",
+    "2. I read your job emails from the last 60 days on my own, within minutes (/sync starts it right away).",
     "3. Review what I found. Each card quotes the email it's based on, and nothing changes until you tap Approve.",
     "",
     "Just looking around? /demo shows me at work on sample emails, no Gmail needed.",
@@ -143,7 +143,9 @@ export function gmailConnectedText(address: string, endedDemo = false): string {
     "I can only read: I can never send, delete or change anything.",
     ...(endedDemo ? ["The demo is over: I removed its sample emails."] : []),
     "",
-    "Next, send /sync. I'll read your job emails from the last 60 days, then show you what I found, one card at a time. After that I check your inbox every 5 minutes on my own.",
+    "What happens now: within 5 minutes I start reading your job emails from the last 60 days, on my own. When I've read them all, I'll send you one summary, then show you what I found, one card at a time. A busy inbox can take up to an hour.",
+    "",
+    "Want me to start right now? Send /sync. After that, I check your inbox every 5 minutes, and new job emails get a card as they arrive.",
   ].join("\n");
 }
 

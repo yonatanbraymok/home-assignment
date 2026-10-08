@@ -9,7 +9,9 @@ import { checkLoginLink } from "@/lib/auth/login";
 import { APP_NAME } from "@/lib/brand";
 import { SIGN_IN_MESSAGES } from "../sign-in-messages";
 
-export const metadata = { title: `Sign in · ${APP_NAME}`, referrer: "no-referrer" };
+// "same-origin", not "no-referrer": with no-referrer, browsers post the Continue form with
+// `Origin: null`, and the sign-in check needs to see that it came from this site.
+export const metadata = { title: `Sign in · ${APP_NAME}`, referrer: "same-origin" };
 
 // Where a /dashboard link lands: whose account it opens, and a button to continue. Signing in
 // happens only on that button (see api/auth/login).

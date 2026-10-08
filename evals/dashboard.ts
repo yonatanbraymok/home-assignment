@@ -197,6 +197,8 @@ async function httpChecks(base: string, a: Seeded, b: Seeded) {
     return fetch(new URL("/api/auth/login", base), { method: "POST", body: form, redirect: "manual", headers: { origin: new URL(base).origin, ...headers } });
   };
   assert.equal((await post(tokenOf(link), { origin: "https://elsewhere.example" })).status, 403, "a cross-site post is refused");
+  assert.equal((await post(tokenOf(link), { origin: "null", "sec-fetch-site": "cross-site" })).status, 403, "Origin: null from another site is refused");
+  assert.equal((await post(`${tokenOf(link)}.`, { origin: "null", "sec-fetch-site": "same-origin" })).status, 303, "Origin: null from this site (some in-app browsers) gets through");
   const first = await post(tokenOf(link));
   assert.equal(first.status, 303);
   assert.equal(location(first).pathname, "/dashboard");

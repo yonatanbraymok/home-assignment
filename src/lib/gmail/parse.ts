@@ -102,12 +102,24 @@ const REPLY_HEADERS = [
 
 export function stripQuotedHistory(text: string): string {
   // Join Gmail's wrapped "On <date> <sender>\nwrote:" into one line before matching.
-  let body = text.replace(/\r\n/g, "\n").replace(/^(On .{0,300})\n(wrote:\s*)$/gm, "$1 $2");
+  const full = text.replace(/\r\n/g, "\n").replace(/^(On .{0,300})\n(wrote:\s*)$/gm, "$1 $2");
+  let body = full;
   for (const pattern of REPLY_HEADERS) {
     const match = pattern.exec(body);
     if (match) body = body.slice(0, match.index);
   }
-  return body
+  const newest = clean(body);
+  if (newest) return newest;
+  // Nothing written above a forward (someone forwarding a recruiter's email to themselves): the
+  // forwarded message is the content, with its From/Date/Subject lines, which name the company.
+  const forward = FORWARD_HEADER.exec(full);
+  return forward ? clean(full.slice(forward.index + forward[0].length)) : "";
+}
+
+const FORWARD_HEADER = /^-{2,}\s*Forwarded message\s*-{2,}[^\n]*\n/im;
+
+function clean(text: string): string {
+  return text
     .split("\n")
     .filter((line) => !line.trimStart().startsWith(">"))
     .join("\n")

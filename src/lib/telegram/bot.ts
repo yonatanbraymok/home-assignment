@@ -9,7 +9,8 @@ import { signToken } from "@/lib/crypto";
 import { db } from "@/lib/db";
 import { appUrl, requireEnv } from "@/lib/env";
 import { GmailAccessRevoked, syncMailbox } from "@/lib/gmail/sync";
-import { budgetStatus } from "@/lib/llm/budget";
+import { budgetStatus, spendByPurpose } from "@/lib/llm/budget";
+import { breakdownOf, forecastUsd } from "@/lib/llm/budget-policy";
 import { quietly, refreshCard, renderCardById, sendCard } from "@/lib/proposals/cards-io";
 import { approveProposal, rejectProposal } from "@/lib/proposals/decide";
 import { START_REVIEW_DATA } from "@/lib/proposals/past-emails";
@@ -17,16 +18,25 @@ import { continueReview, deferReviewCard, finishBackfill, showNextReviewCard } f
 import { READ_TOOLS } from "@/lib/tools/read";
 import { ensureBudgetNotices } from "./budget-notices";
 import {
+  ALREADY_DELETED_TEXT,
+  ALREADY_DISCONNECTED_TEXT,
+  CANCELLED_TEXT,
+  CONFIRM_EXPIRED_TEXT,
+  CONFIRM_NOT_OWNER_TEXT,
   DECISION_TOAST,
+  GMAIL_UNREACHABLE_TEXT,
   LATER_TOAST,
-  STILL_READING_TEXT,
   NOTHING_STORED_TEXT,
+  NOTHING_TO_REVIEW_TOAST,
+  NOTHING_WAITING_TEXT,
   NOT_CONNECTED_FOR_DISCONNECT_TEXT,
   NOT_CONNECTED_TEXT,
   NOT_REGISTERED_TEXT,
+  STILL_READING_TEXT,
+  SYNC_COOLDOWN_TEXT,
+  TEXT_ONLY_TEXT,
   UNKNOWN_COMMAND_TEXT,
-  analysisText,
-  connectText,
+  connectReply,
   dashboardLinkReply,
   deleteConfirmText,
   deleteDoneText,
@@ -35,7 +45,7 @@ import {
   helpText,
   statusText,
   stillReadingText,
-  syncText,
+  syncReplyText,
   welcomeText,
   type StatsForText,
 } from "./messages";
@@ -77,7 +87,7 @@ function ignoreNotModified(err: unknown) {
 function findUser(telegramId: number) {
   return db.user.findUnique({
     where: { telegramUserId: BigInt(telegramId) },
-    select: { id: true, gmailAddress: true, gmailRefreshTokenEnc: true, gmailLastSyncAt: true },
+    select: { id: true, gmailAddress: true, gmailRefreshTokenEnc: true, gmailLastSyncAt: true, demoAt: true },
   });
 }
 
@@ -128,7 +138,7 @@ function registerHandlers(bot: Bot) {
     const user = await findUser(ctx.from.id);
     if (!user) return answer(ctx, { text: NOT_REGISTERED_TEXT });
     const next = await showNextReviewCard(user.id);
-    await answer(ctx, next.kind === "done" ? { text: "Nothing left to review." } : next.kind === "reading" ? { text: STILL_READING_TEXT } : undefined);
+    await answer(ctx, next.kind === "done" ? { text: NOTHING_TO_REVIEW_TOAST } : next.kind === "reading" ? { text: STILL_READING_TEXT } : undefined);
     // One tap is enough; /pending continues the review later.
     await ctx.editMessageReplyMarkup().catch(ignoreNotModified);
     // Already started: bring the current card back to the bottom of the chat.
@@ -139,24 +149,24 @@ function registerHandlers(bot: Bot) {
   // keyboard removes the buttons, so a confirmation can be used once.
   bot.callbackQuery(/^acct:/, async (ctx) => {
     if (ctx.callbackQuery.data === CANCEL_DATA) {
-      await answer(ctx, { text: "Cancelled." });
-      return ctx.editMessageText("Cancelled. Nothing changed.").catch(ignoreNotModified);
+      await answer(ctx, { text: CANCELLED_TEXT });
+      return ctx.editMessageText(CANCELLED_TEXT).catch(ignoreNotModified);
     }
     const auth = await authorizeConfirmation(ctx.callbackQuery.data, BigInt(ctx.from.id));
     if (auth === "invalid") return answer(ctx);
-    if (auth === "not-owner") return answer(ctx, { text: "Only the account owner can confirm this.", show_alert: true });
+    if (auth === "not-owner") return answer(ctx, { text: CONFIRM_NOT_OWNER_TEXT, show_alert: true });
     if (auth === "expired" || auth === "not-found") {
-      const text = auth === "expired" ? "This confirmation expired. Nothing changed; send the command again." : "Already deleted.";
+      const text = auth === "expired" ? CONFIRM_EXPIRED_TEXT : ALREADY_DELETED_TEXT;
       await answer(ctx, { text });
       return ctx.editMessageText(text).catch(ignoreNotModified);
     }
     await answer(ctx);
     if (auth.action === "disconnect") {
       const result = await disconnectGmail(auth.userId, `tg:${ctx.from.id}`);
-      return ctx.editMessageText(result.status === "disconnected" ? disconnectDoneText(result.revoke) : "Gmail was already disconnected.").catch(ignoreNotModified);
+      return ctx.editMessageText(result.status === "disconnected" ? disconnectDoneText(result.revoke) : ALREADY_DISCONNECTED_TEXT).catch(ignoreNotModified);
     }
     const result = await deleteAccount(auth.userId);
-    return ctx.editMessageText(result.status === "deleted" ? deleteDoneText(result.revoke) : "Already deleted.").catch(ignoreNotModified);
+    return ctx.editMessageText(result.status === "deleted" ? deleteDoneText(result.revoke) : ALREADY_DELETED_TEXT).catch(ignoreNotModified);
   });
 
   // Everything else only works in private chats; updates from groups and channels are ignored.
@@ -170,13 +180,13 @@ function registerHandlers(bot: Bot) {
       telegramUsername: from.username ?? null,
       displayName: [from.first_name, from.last_name].filter(Boolean).join(" "),
     };
-    const existing = await db.user.findUnique({ where: { telegramUserId }, select: { id: true, gmailAddress: true } });
+    const existing = await db.user.findUnique({ where: { telegramUserId }, select: { id: true, gmailAddress: true, demoAt: true } });
     if (existing) {
       await db.user.update({ where: { id: existing.id }, data: profile });
     } else {
       await db.user.create({ data: { telegramUserId, ...profile } });
     }
-    await ctx.reply(welcomeText(from.first_name, !existing, existing?.gmailAddress ?? null));
+    await ctx.reply(welcomeText({ firstName: from.first_name, isNew: !existing, gmailAddress: existing?.gmailAddress ?? null, demo: Boolean(existing?.demoAt) }));
   });
 
   pm.command("help", (ctx) => ctx.reply(helpText()));
@@ -186,8 +196,7 @@ function registerHandlers(bot: Bot) {
     if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
     const token = signToken("gmail-connect", user.id, CONNECT_LINK_TTL_SECONDS);
     const link = appUrl(`/api/gmail/connect?t=${token}`);
-    // Previews off: Telegram's preview crawler would otherwise open the link.
-    await ctx.reply(connectText(link, user.gmailAddress), { link_preview_options: { is_disabled: true } });
+    await ctx.reply(...connectReply(link, user.gmailAddress));
   });
 
   pm.command("sync", async (ctx) => {
@@ -195,21 +204,21 @@ function registerHandlers(bot: Bot) {
     if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
     if (!user.gmailRefreshTokenEnc) return ctx.reply(NOT_CONNECTED_TEXT);
     if (user.gmailLastSyncAt && Date.now() - user.gmailLastSyncAt.getTime() < SYNC_COOLDOWN_MS) {
-      return ctx.reply("I checked less than a minute ago. Try again shortly.");
+      return ctx.reply(SYNC_COOLDOWN_TEXT);
     }
     await ctx.replyWithChatAction("typing");
-    let fetched: string;
+    let synced: Awaited<ReturnType<typeof syncMailbox>>;
     try {
-      fetched = syncText(await syncMailbox(user));
+      synced = await syncMailbox(user);
     } catch (err) {
       if (err instanceof GmailAccessRevoked) return ctx.reply(err.message);
       console.error("/sync failed:", err instanceof Error ? err.message : err);
-      return ctx.reply("I couldn't reach Gmail just now. Nothing was lost; try /sync again in a minute.");
+      return ctx.reply(GMAIL_UNREACHABLE_TEXT);
     }
     await ctx.replyWithChatAction("typing");
     const analysis = await analyzePendingEmails(user.id, ANALYZE_PER_SYNC);
     const stillQueued = await db.emailMessage.count({ where: { userId: user.id, state: { in: [...NOT_YET_READ] } } });
-    await ctx.reply([fetched, analysisText(analysis, stillQueued)].filter(Boolean).join("\n\n"));
+    await ctx.reply(syncReplyText(synced, analysis, stillQueued));
     await quietly("review summary", finishBackfill(user.id));
     await quietly("budget notices", ensureBudgetNotices({ recipients: [user.id] }));
   });
@@ -228,7 +237,7 @@ function registerHandlers(bot: Bot) {
     const review = await showNextReviewCard(user.id);
     if (review.kind === "open" && !shown.some((p) => p.id === review.proposalId)) await sendCard(review.proposalId);
     if (review.kind === "reading") return ctx.reply(stillReadingText(await budgetStatus(user.id)));
-    if (!shown.length && review.kind === "done") return ctx.reply("Nothing is waiting for your decision.");
+    if (!shown.length && review.kind === "done") return ctx.reply(NOTHING_WAITING_TEXT);
   });
 
   pm.command("disconnect", async (ctx) => {
@@ -253,8 +262,14 @@ function registerHandlers(bot: Bot) {
   pm.command("status", async (ctx) => {
     const user = await findUser(ctx.from.id);
     if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
-    const [stats, budget] = await Promise.all([READ_TOOLS.get_stats.run(db, user.id, {}) as Promise<StatsForText>, budgetStatus(user.id)]);
-    await ctx.reply(statusText(stats, budget));
+    const now = new Date();
+    const [stats, budget, byPurpose] = await Promise.all([
+      READ_TOOLS.get_stats.run(db, user.id, {}) as Promise<StatsForText>,
+      budgetStatus(user.id, now),
+      spendByPurpose(user.id, now),
+    ]);
+    const spend = { breakdown: breakdownOf(byPurpose), forecastUsd: forecastUsd(budget.user?.spentUsd ?? 0, now) };
+    await ctx.reply(statusText(stats, { budget, spend, demo: Boolean(user.demoAt) }));
   });
 
   // Any other text is a question about the user's applications.
@@ -271,5 +286,5 @@ function registerHandlers(bot: Bot) {
     await quietly("budget notices", ensureBudgetNotices({ recipients: [user.id] }));
   });
 
-  pm.on("message", (ctx) => ctx.reply("I can only read text messages. Ask me about your applications, or send /help."));
+  pm.on("message", (ctx) => ctx.reply(TEXT_ONLY_TEXT));
 }

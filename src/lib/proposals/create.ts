@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { TX_OPTIONS, db } from "@/lib/db";
 import type { ApplicationStatus, Confidence } from "@/generated/prisma/enums";
 import type { Classification } from "@/lib/agent/classify";
 import { dedupeKey, type MatchResult, type MatchableApplication } from "@/lib/agent/match";
@@ -165,7 +165,7 @@ async function createReplacingOlder(
     // The review card on screen is being replaced: the review must move on without a tap.
     const replacedReviewCard = sameTarget.some((p) => p.heldForReview && p.expiresAt);
     return { proposalId: await insertProposal(tx, data), superseded, replacedReviewCard };
-  });
+  }, TX_OPTIONS);
 
   if (outcome.proposalId === null) return { proposalId: null, reason: outcome.reason };
   for (const id of outcome.superseded) await quietly("refresh superseded card", refreshCard(id));
@@ -176,7 +176,7 @@ async function createReplacingOlder(
 
 /** For "which application is this?" proposals: no single target, so nothing to supersede. */
 async function createProposal(data: NewProposal): Promise<ProposeOutcome> {
-  const proposalId = await db.$transaction((tx) => insertProposal(tx, data));
+  const proposalId = await db.$transaction((tx) => insertProposal(tx, data), TX_OPTIONS);
   if (!data.heldForReview) await quietly("send proposal card", sendCard(proposalId));
   return { proposalId, held: data.heldForReview };
 }

@@ -1,5 +1,8 @@
+import type { InlineKeyboardMarkup, LinkPreviewOptions } from "grammy/types";
 import type { AccountSummary } from "@/lib/account/manage";
 import type { AnalysisSummary } from "@/lib/agent/analyze";
+import { APP_NAME } from "@/lib/brand";
+import { formatDateTime } from "@/lib/format";
 import type { RevokeResult } from "@/lib/gmail/oauth";
 import type { SyncSummary } from "@/lib/gmail/sync";
 import {
@@ -10,6 +13,7 @@ import {
   type BudgetScope,
   type NoticeKind,
   type ScopeStatus,
+  type SpendBreakdown,
 } from "@/lib/llm/budget-policy";
 import type { Decision } from "@/lib/proposals/decide";
 import type { ReviewSummary } from "@/lib/proposals/past-emails";
@@ -18,87 +22,180 @@ import { CLOSED_STATUSES, OPEN_STATUSES, STATUS_DESCRIPTION } from "@/lib/propos
 import type { ApplicationStatus } from "@/generated/prisma/enums";
 import { COMMANDS } from "./commands";
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+// Everything the bot says, except proposal cards (proposals/card.ts). Warm and plain, short
+// lines, and an emoji only where it means something: ✅ done, ⚠️ a problem, ⏸ AI paused.
+
+const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
-export function welcomeText(firstName: string, isNew: boolean, gmailAddress: string | null) {
+const LINK_MINUTES = 10;
+
+// ---------- Getting started ----------
+
+export function welcomeText(opts: { firstName: string; isNew: boolean; gmailAddress: string | null; demo: boolean }): string {
+  const { firstName, gmailAddress } = opts;
+  if (gmailAddress) {
+    return [
+      `Welcome back, ${firstName} 👋`,
+      "",
+      `I'm reading ${gmailAddress} and check it every 5 minutes. /sync checks right now.`,
+      "",
+      "/status – your applications at a glance",
+      "/pending – cards waiting for you",
+      "/dashboard – everything in your browser",
+      "/help – how it works",
+    ].join("\n");
+  }
+  if (opts.demo) {
+    return [
+      `Welcome back, ${firstName} 👋 You're trying me out with sample emails.`,
+      "",
+      "/demo_email – a new sample email arrives",
+      "/pending – cards waiting for you",
+      "/dashboard – everything in your browser",
+      "/demo_reset – remove the samples",
+      "",
+      "Ready for the real thing? /connect your Gmail.",
+    ].join("\n");
+  }
   return [
-    isNew ? `Hi ${firstName}, you're registered.` : `Welcome back, ${firstName}.`,
+    opts.isNew ? `Hi ${firstName} 👋 I'm ${APP_NAME}.` : `Welcome back, ${firstName} 👋`,
     "",
-    "I keep your internship applications up to date from your inbox:",
-    "• I read job emails from your Gmail (read-only: I can never send, delete or change mail)",
-    "• I spot confirmations, online assessments, interviews, rejections and offers",
-    "• For each one I explain why, quoting the exact sentence from the email",
-    "• I propose the change here with Approve / Reject buttons. Nothing changes until you tap Approve.",
-    "• After you connect, I read your past emails first, then show you what I found one card at a time.",
+    "I read the job emails in your Gmail and keep your applications up to date, so you don't have to.",
     "",
-    "Send /dashboard to see everything in your browser. You can /disconnect Gmail or /delete_my_data at any time.",
+    "Three steps:",
+    "1. /connect your Gmail. Read-only: I can never send, delete or change anything.",
+    "2. /sync to read your job emails from the last 60 days.",
+    "3. Review what I found. Each card quotes the email it's based on, and nothing changes until you tap Approve.",
     "",
-    gmailAddress ? `Gmail connected: ${gmailAddress}. Send /sync to check for new emails.` : "Next step: send /connect to link your Gmail.",
+    "Just looking around? /demo shows me at work on sample emails, no Gmail needed.",
+    "",
+    "You're in control: /disconnect stops me reading your email, and /delete_my_data erases everything.",
   ].join("\n");
 }
 
-export function helpText() {
+export function helpText(): string {
   return [
-    "How approvals work",
-    "Every change I suggest comes with the email it's based on, the sentence that justifies it and how confident I am. Only you can approve changes to your own applications, and a card expires 7 days after I show it.",
+    "How it works",
     "",
-    "Your past emails (from before you connected Gmail) come as one review, one card at a time. ⏭ Later moves a card to the end; /pending continues where you stopped.",
+    "When a job email arrives, I send you a card: what changed, the sentence in the email that shows it, and how sure I am. Nothing changes until you tap Approve. A card expires after 7 days.",
     "",
-    "I check your inbox every 5 minutes on my own. Send /sync to check right now, e.g. right after a test email.",
+    "Right after you connect, I read your past emails, then show what I found one card at a time. ⏭ Later moves a card to the end; /pending picks up where you stopped.",
+    "",
+    "I check your inbox every 5 minutes. /sync checks right now.",
+    "",
+    'You can also ask me anything about your applications, like "which companies haven\'t replied?"',
     "",
     "Commands",
     ...COMMANDS.map((c) => `/${c.command} – ${c.description}`),
   ].join("\n");
 }
 
-export function connectText(link: string, gmailAddress: string | null) {
-  return [
-    gmailAddress
-      ? `Gmail connected: ${gmailAddress}. To reconnect or switch accounts, open this link within 10 minutes:`
-      : "Open this link within 10 minutes to connect your Gmail:",
+// ---------- Links: a button, like "Open email" on the cards ----------
+
+export type LinkReply = [text: string, options: { link_preview_options: LinkPreviewOptions; reply_markup?: InlineKeyboardMarkup }];
+
+/**
+ * A message whose point is one link. Telegram only takes https links in buttons, so a local
+ * http://localhost link goes in the text instead. Previews stay off either way: Telegram's
+ * preview crawler would open the link, and a sign-in link works only once.
+ */
+function linkReply(lines: (cta: string) => string[], button: string, link: string): LinkReply {
+  const preview = { is_disabled: true };
+  if (!link.startsWith("https://")) return [[...lines("Open the link below"), "", link].join("\n"), { link_preview_options: preview }];
+  return [lines("Tap the button below").join("\n"), { link_preview_options: preview, reply_markup: { inline_keyboard: [[{ text: button, url: link }]] } }];
+}
+
+export function connectReply(link: string, gmailAddress: string | null): LinkReply {
+  return linkReply(
+    (cta) => [
+      gmailAddress
+        ? `You're connected as ${gmailAddress}. To reconnect or switch accounts: ${cta.toLowerCase()} (it works for ${LINK_MINUTES} minutes).`
+        : `${cta} to connect your Gmail. It works for ${LINK_MINUTES} minutes.`,
+      "",
+      "Google will ask to let me read your email. I keep only job-related emails, and I can never send, delete or change anything.",
+    ],
+    "🔗 Connect Gmail",
     link,
+  );
+}
+
+export function dashboardLinkReply(link: string): LinkReply {
+  return linkReply(
+    (cta) => [
+      `${cta} to open your dashboard: your applications, the emails behind them and the cards waiting for you.`,
+      "",
+      `It signs you in once, within ${LINK_MINUTES} minutes. Send /dashboard again for a fresh link. Approving still happens here in Telegram.`,
+    ],
+    "🔗 Open dashboard",
+    link,
+  );
+}
+
+export function gmailConnectedText(address: string): string {
+  return [
+    `✅ Gmail connected: ${address}`,
     "",
-    "Google will ask to let me read your email. I only keep job-related emails, and I can never send, delete or change anything.",
+    "I can only read: I can never send, delete or change anything.",
+    "",
+    "Next, send /sync. I'll read your job emails from the last 60 days, then show you what I found, one card at a time. After that I check your inbox every 5 minutes on my own.",
   ].join("\n");
 }
 
-export function syncText({ fetched, candidates, skipped, remaining }: SyncSummary) {
-  if (fetched === 0 && remaining === 0) return "Up to date: no new emails since the last check.";
-  const lines = [
-    `Fetched ${fetched} new email${fetched === 1 ? "" : "s"}: ${candidates} look job-related and are queued for analysis, ${skipped} skipped as unrelated.`,
-  ];
-  if (remaining > 0) lines.push(`${remaining} older emails still to fetch. Send /sync again to continue.`);
-  return lines.join("\n");
+// ---------- /sync ----------
+
+/** The /sync reply: what was fetched, what was read, and whether more is coming. */
+export function syncReplyText(sync: SyncSummary, analysis: AnalysisSummary, stillQueued: number): string {
+  const parts = [syncText(sync), analysisText(analysis, stillQueued)].filter(Boolean);
+  // The cron keeps fetching and reading; /sync only does a batch now.
+  if (!analysis.budget && !analysis.skippedNotConfigured && (sync.remaining > 0 || stillQueued > 0)) {
+    parts.push("I'll keep going on my own every few minutes; /sync speeds it up.");
+  }
+  return parts.join("\n\n");
+}
+
+export function syncText({ fetched, candidates, remaining }: SyncSummary): string {
+  if (fetched === 0 && remaining === 0) return "All caught up: no new emails since my last check.";
+  const lines: string[] = [];
+  if (fetched) lines.push(`Found ${plural(fetched, "new email")}; ${candidates} ${candidates === 1 ? "looks" : "look"} job-related.`);
+  if (remaining > 0) lines.push(`${plural(remaining, "older email")} still to fetch.`);
+  return lines.join(" ");
 }
 
 export function analysisText(s: AnalysisSummary, stillQueued: number): string {
-  if (s.skippedNotConfigured) return "Email analysis isn't configured yet, so nothing was analysed.";
+  if (s.skippedNotConfigured) return "Reading emails isn't set up on this server (no AI key), so nothing was read.";
   if (s.analyzed === 0) return s.budget ? budgetWaitingText(s.budget) : "";
   const outcomes = [
-    ...(s.proposals || !s.held ? [`${plural(s.proposals, "proposal")} sent above`] : []),
-    ...(s.held ? [`${s.held} kept for your review`] : []),
-    `${s.noChange} needed no change`,
-    `${s.notJobRelated} not job-related`,
-  ];
-  const lines = [`Analysed ${s.analyzed}: ${outcomes.join(", ")}.`];
-  if (s.held) lines.push("Once I've read all your past emails, I'll show you what I found one card at a time.");
-  if (s.unverified) lines.push(`${s.unverified} skipped: I couldn't find my evidence quote in the email, so I won't propose anything from it (I'll retry).`);
-  if (s.failed) lines.push(`${s.failed} couldn't be analysed right now (I'll retry).`);
+    s.proposals ? `${plural(s.proposals, "card")} sent above` : null,
+    s.held ? `${s.held} kept for your review` : null,
+    s.noChange ? `${s.noChange} needed no change` : null,
+    s.notJobRelated ? `${s.notJobRelated} not job-related` : null,
+  ].filter(Boolean);
+  const lines = [`Read ${plural(s.analyzed, "email")}${outcomes.length ? `: ${outcomes.join(", ")}` : ""}.`];
+  if (s.held) lines.push("When I've read all your past emails, I'll show you what I found, one card at a time.");
+  if (s.unverified) {
+    lines.push(`${s.unverified} set aside: the sentence I'd quote isn't in the email word for word, so I won't suggest anything from it. I'll try again.`);
+  }
+  if (s.failed) lines.push(`${s.failed} couldn't be read right now. I'll try again.`);
   // Sending /sync again can't help while the budget is used up.
   if (s.budget) lines.push(budgetWaitingText(s.budget));
-  else if (stillQueued) lines.push(`${stillQueued} more queued. Send /sync again to continue.`);
+  else if (stillQueued) lines.push(`${stillQueued} more to read.`);
   return lines.join("\n");
 }
 
+export const SYNC_COOLDOWN_TEXT = "I checked less than a minute ago. Give it a moment and try again.";
+
+export const GMAIL_UNREACHABLE_TEXT = "I couldn't reach Gmail just now. Nothing was lost; try /sync again in a minute.";
+
 // ---------- AI budget (rules in lib/llm/budget-policy.ts) ----------
 
-const money = (usd: number) => `$${usd.toFixed(2)}`;
+/** Amounts under a cent keep four decimals, so a small spend doesn't read as $0.00. */
+const money = (usd: number) => `$${usd.toFixed(usd > 0 && usd < 0.01 ? 4 : 2)}`;
 const budgetName = (scope: BudgetScope) => (scope === "user" ? "your monthly AI allowance" : "the shared monthly AI budget");
 const STILL_WORKS = "/status, /pending, approving cards and the dashboard still work.";
 
 function budgetWaitingText(b: NonNullable<AnalysisSummary["budget"]>): string {
-  return `AI is paused until ${resetDateText(b.resetsOn)} because ${budgetName(b.scope)} is used up: ${plural(b.waiting, "email")} wait unread and will be read then.`;
+  return `⏸ AI is paused until ${resetDateText(b.resetsOn)} because ${budgetName(b.scope)} is used up: ${plural(b.waiting, "email")} wait unread and will be read then.`;
 }
 
 /** The reply to a question while the AI is paused: whose budget, until when, and what still works. */
@@ -108,13 +205,34 @@ export function budgetPausedText(scope: BudgetScope, resetsOn: Date): string {
 
 export function chatLimitText(mode: BudgetMode): string {
   const why = mode.level === "low" && mode.limitedBy ? ` while ${budgetName(mode.limitedBy)} is past 80% (until ${resetDateText(mode.resetsOn)})` : "";
-  return `You've asked ${mode.chatDailyLimit} questions in the last 24 hours, which is the daily limit${why}. /status still works.`;
+  return `You've asked ${mode.chatDailyLimit} questions in the last 24 hours, which is the daily limit${why}. Try again later; /status still works.`;
 }
 
+/** Where this month's AI spend went, and where it's heading (for /status). */
+export type SpendForText = { breakdown: SpendBreakdown; forecastUsd: number | null };
+
 /** For /status: this month's spend, and what's limited or paused and until when. */
-export function budgetStatusLines(mode: BudgetMode): string[] {
+export function budgetStatusLines(mode: BudgetMode, spend?: SpendForText): string[] {
   const lines: string[] = [];
-  if (mode.user) lines.push(`AI this month: ${money(mode.user.spentUsd)} of your ${money(mode.user.capUsd)}.`);
+  const month = monthName(mode.resetsOn);
+  if (mode.user) {
+    lines.push(`AI this month: ${money(mode.user.spentUsd)} of your ${money(mode.user.capUsd)}.`);
+    const parts = spend
+      ? ([
+          ["reading emails", spend.breakdown.emails],
+          ["questions", spend.breakdown.chat],
+          ["briefs for other agents", spend.breakdown.briefs],
+        ] as const).filter(([, usd]) => usd > 0)
+      : [];
+    if (parts.length) lines.push(`That's ${parts.map(([label, usd]) => `${money(usd)} on ${label}`).join(", ")}.`);
+    if (spend && spend.forecastUsd !== null) {
+      lines.push(
+        spend.forecastUsd > mode.user.capUsd
+          ? `At this pace, you'd use it all before the end of ${month}.`
+          : `At this pace, about ${money(spend.forecastUsd)} by the end of ${month}.`,
+      );
+    }
+  }
   if (mode.service.level !== "ok") lines.push(`Shared AI budget: ${money(mode.service.spentUsd)} of ${money(mode.service.capUsd)}.`);
   const until = resetDateText(mode.resetsOn);
   if (mode.level === "low" && mode.limitedBy) {
@@ -123,7 +241,7 @@ export function budgetStatusLines(mode: BudgetMode): string[] {
     );
   }
   if (mode.level === "out" && mode.limitedBy) {
-    lines.push(`Paused until ${until} because ${budgetName(mode.limitedBy)} is used up: questions and reading new emails. ${STILL_WORKS}`);
+    lines.push(`⏸ Paused until ${until} because ${budgetName(mode.limitedBy)} is used up: questions and reading new emails. ${STILL_WORKS}`);
   }
   return lines;
 }
@@ -142,29 +260,25 @@ export function budgetNoticeText(kind: NoticeKind, status: ScopeStatus, resetsOn
   }
   if (kind.scope === "user") {
     return kind.pct === 80
-      ? `You've used 80% of your AI allowance for ${month} (${amount}). To make it last, until ${until}: ${limits}. Everything else works as usual.`
-      : `Your AI allowance for ${month} is used up (${amount}). ${paused}`;
+      ? `Heads up: you've used 80% of your AI allowance for ${month} (${amount}). To make it last, until ${until}: ${limits}. Everything else works as usual.`
+      : `⏸ Your AI allowance for ${month} is used up (${amount}). ${paused}`;
   }
   return kind.pct === 80
-    ? `The shared AI budget for all users is past 80% for ${month}. To make it last, until ${until}: ${limits}. Everything else works as usual.`
-    : `The shared AI budget for all users is used up for ${month}. ${paused}`;
+    ? `Heads up: the shared AI budget for all users is past 80% for ${month}. To make it last, until ${until}: ${limits}. Everything else works as usual.`
+    : `⏸ The shared AI budget for all users is used up for ${month}. ${paused}`;
 }
 
-/** /pending and the review button while the past emails are still being read. */
-export function stillReadingText(mode?: BudgetMode): string {
-  if (!mode || mode.aiOn || !mode.limitedBy) return STILL_READING_TEXT;
-  return `I'm still reading your past emails, but AI is paused until ${resetDateText(mode.resetsOn)} because ${budgetName(mode.limitedBy)} is used up. Your review starts once they're read.`;
-}
+// ---------- Cards and the review of past emails ----------
 
 export const DECISION_TOAST: Record<Decision["kind"], string> = {
-  executed: "Done: application updated.",
-  rejected: "Rejected. Nothing was changed.",
-  stale: "Not applied: the application changed since this proposal.",
-  failed: "Couldn't apply it. Nothing was changed; you can retry.",
+  executed: "✅ Done. Your tracker is updated.",
+  rejected: "Rejected. Nothing changed.",
+  stale: "Not applied: the application changed since this card.",
+  failed: "Couldn't apply it. Nothing changed; you can retry.",
   already: "Already decided.",
-  expired: "This proposal expired. Nothing was changed.",
+  expired: "This card expired. Nothing changed.",
   "not-yours": "Only the owner of this application can decide this.",
-  "not-found": "This proposal no longer exists.",
+  "not-found": "This card no longer exists.",
   "needs-choice": "Tap the application this email is about.",
 };
 
@@ -181,24 +295,36 @@ const SUMMARY_ORDER: ApplicationStatus[] = ["OFFER", "INTERVIEW", "ASSESSMENT", 
 /** Sent once all past emails are read, instead of one card per email. */
 export function reviewReadyText(s: ReviewSummary): string {
   return [
-    `I've finished reading your past emails. ${plural(s.total, "update")} ${s.total === 1 ? "is" : "are"} waiting for your review, from ${s.companies} ${s.companies === 1 ? "company" : "companies"}:`,
+    `I've finished reading your past emails. ${plural(s.total, "update")} from ${plural(s.companies, "company", "companies")} ${s.total === 1 ? "is" : "are"} waiting for your review:`,
     ...SUMMARY_ORDER.filter((k) => s.byStatus[k]).map((k) => `• ${plural(s.byStatus[k]!, STATUS_NOUN[k])}`),
     "",
-    "Nothing changes until you approve each one. I'll show them one at a time, grouped by company. ⏭ Later moves a card to the end, and /pending continues where you stopped.",
+    "I'll show them one at a time, grouped by company. Nothing changes until you approve each one. ⏭ Later moves a card to the end, and /pending picks up where you stopped.",
   ].join("\n");
 }
 
-export const REVIEW_DONE_TEXT = "That's everything from your past emails. From now on, I'll send a card when a new job email arrives.";
+export const REVIEW_DONE_TEXT = "✅ That's everything from your past emails. From now on, I'll send a card as soon as a new job email arrives.";
 
-export const STILL_READING_TEXT = "I'm still reading your past emails. When I'm done, I'll show you what I found one card at a time.";
+export const STILL_READING_TEXT = "I'm still reading your past emails. When I'm done, I'll show you what I found, one card at a time.";
+
+/** /pending and the review button while the past emails are still being read. */
+export function stillReadingText(mode?: BudgetMode): string {
+  if (!mode || mode.aiOn || !mode.limitedBy) return STILL_READING_TEXT;
+  return `I'm still reading your past emails, but AI is paused until ${resetDateText(mode.resetsOn)} because ${budgetName(mode.limitedBy)} is used up. Your review starts once they're read.`;
+}
+
+export const NOTHING_TO_REVIEW_TOAST = "Nothing left to review.";
+
+export const NOTHING_WAITING_TEXT = "You're all caught up: nothing is waiting for your decision.";
 
 export const LATER_TOAST: Record<DeferResult, string> = {
   deferred: "Moved to the end of your review.",
   last: "This is the last one left to review.",
-  "not-open": "This card isn't waiting for a decision any more.",
+  "not-open": "This card isn't waiting for a decision anymore.",
   "not-yours": "Only the owner of this application can decide this.",
-  "not-found": "This proposal no longer exists.",
+  "not-found": "This card no longer exists.",
 };
+
+// ---------- /status ----------
 
 export type StatsForText = {
   total: number;
@@ -208,34 +334,44 @@ export type StatsForText = {
   coverage: { gmail: string | null; emails_since: string | null; last_gmail_check: string | null };
 };
 
+/** e.g. "15 Aug", from the stats' "2026-08-15". */
+const dayText = (isoDay: string) => new Date(`${isoDay}T00:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
+
 /** /status: straight from the database, no AI, so it works even when the AI budget is used up. */
-export function statusText(s: StatsForText, budget?: BudgetMode): string {
-  if (!s.coverage.gmail && s.total === 0) return "Gmail isn't connected yet. Send /connect to start.";
+export function statusText(s: StatsForText, opts: { budget?: BudgetMode; spend?: SpendForText; demo?: boolean } = {}): string {
+  if (!s.coverage.gmail && !opts.demo && s.total === 0) return NOT_CONNECTED_TEXT;
   // Open and closed are the two groups; each status belongs to exactly one.
-  const group = (statuses: ApplicationStatus[]) =>
-    statuses.filter((k) => s.by_status[k]).map((k) => `  • ${STATUS_DESCRIPTION[k][0].toUpperCase()}${STATUS_DESCRIPTION[k].slice(1)}: ${s.by_status[k]}`);
-  const closed = s.total - s.open;
+  const group = (title: string, statuses: ApplicationStatus[]) => {
+    const lines = statuses.filter((k) => s.by_status[k]).map((k) => `• ${capital(STATUS_DESCRIPTION[k])}: ${s.by_status[k]}`);
+    return lines.length ? ["", title, ...lines] : [];
+  };
+  const waiting = s.proposals_waiting_for_decision;
+  const { gmail, emails_since, last_gmail_check } = s.coverage;
+  const source = opts.demo
+    ? "These come from sample emails. /demo_email sends another; /demo_reset removes them."
+    : gmail
+      ? `Reading ${gmail}${emails_since ? `, emails since ${dayText(emails_since)}` : ""}.${last_gmail_check ? ` Last checked ${formatDateTime(new Date(last_gmail_check))}.` : ""}`
+      : "Gmail is disconnected, so I'm not reading new emails; /connect resumes. You can still ask me about these applications.";
   return [
-    `Tracking ${s.total} application${s.total === 1 ? "" : "s"}.`,
+    `You're tracking ${plural(s.total, "application")}: ${s.open} open, ${s.total - s.open} closed.`,
+    ...group("Open", OPEN_STATUSES),
+    ...group("Closed", CLOSED_STATUSES),
     "",
-    `Open: ${s.open}`,
-    ...group(OPEN_STATUSES),
-    `Closed: ${closed}`,
-    ...group(CLOSED_STATUSES),
+    waiting ? `${plural(waiting, "card")} waiting for your decision: /pending` : "Nothing is waiting for your decision.",
     "",
-    `Waiting for your decision: ${s.proposals_waiting_for_decision}${s.proposals_waiting_for_decision ? " (/pending)" : ""}`,
+    source,
+    ...(opts.budget ? ["", ...budgetStatusLines(opts.budget, opts.spend)] : []),
     "",
-    s.coverage.gmail
-      ? `From ${s.coverage.gmail}${s.coverage.emails_since ? ` since ${s.coverage.emails_since}` : ""}. Ask me anything about them, e.g. "which applications haven't replied?"`
-      : "Gmail is disconnected, so nothing new is being read. Send /connect to resume. You can still ask me about these applications.",
-    ...(budget ? ["", ...budgetStatusLines(budget)] : []),
+    'Ask me anything, like "which companies haven\'t replied?"',
   ].join("\n");
 }
+
+// ---------- Your data: /disconnect and /delete_my_data ----------
 
 const REVOKE_NOTE: Record<RevokeResult | "not-connected", string> = {
   revoked: "Google access is revoked.",
   "already-invalid": "Google access was already revoked.",
-  failed: "I couldn't confirm the revoke with Google. To be sure, remove \"Job Hunt Tracker\" at https://myaccount.google.com/permissions",
+  failed: `I couldn't confirm the revoke with Google. To be sure, remove "${APP_NAME}" at https://myaccount.google.com/permissions`,
   "not-connected": "",
 };
 
@@ -244,15 +380,15 @@ export function disconnectConfirmText(gmailAddress: string): string {
     `Disconnect ${gmailAddress}?`,
     "",
     "• I'll revoke my read access at Google and delete the stored token, so I stop reading your email.",
-    "• Your tracker stays: applications, their history, /status and questions keep working.",
-    "• You can /connect again at any time.",
+    "• Your tracker stays: your applications, their history, /status and questions keep working.",
+    "• You can /connect again any time.",
     "",
-    "To erase everything instead, use /delete_my_data.",
+    "Want to erase everything instead? Use /delete_my_data.",
   ].join("\n");
 }
 
 export function disconnectDoneText(revoke: RevokeResult): string {
-  return `Gmail disconnected. ${REVOKE_NOTE[revoke]}\n\nYour tracker is still here. Send /connect to start reading email again.`;
+  return `✅ Gmail disconnected. ${REVOKE_NOTE[revoke]}\n\nYour tracker is still here. /connect starts reading again.`;
 }
 
 export function deleteConfirmText(s: AccountSummary): string {
@@ -262,40 +398,33 @@ export function deleteConfirmText(s: AccountSummary): string {
     `This permanently deletes ${plural(s.applications, "application")}, ${plural(s.emails, "stored email")} with their evidence, ${plural(s.proposals, "card")}, ${plural(s.questions, "chat question")} and your registration, and revokes Gmail access.`,
     "",
     "• Cost records stay, without your name; they hold no content.",
-    "• Messages already in this Telegram chat stay. Clear the chat in Telegram to remove them.",
+    "• Messages already in this chat stay. Clear the chat in Telegram to remove them.",
     "• This can't be undone.",
   ].join("\n");
 }
 
 export function deleteDoneText(revoke: RevokeResult | "not-connected"): string {
-  return ["Done. Everything I stored about you is deleted.", REVOKE_NOTE[revoke], "", "Send /start if you want to begin again."]
+  return ["✅ Done. Everything I stored about you is deleted.", REVOKE_NOTE[revoke], "", "Send /start if you ever want to begin again."]
     .filter((line, i) => line || i !== 1)
     .join("\n");
 }
 
-/**
- * The /dashboard reply: the text and its send options together. Previews must stay off: Telegram's
- * preview crawler would open the link, and that would use it up before the user taps it.
- */
-export function dashboardLinkReply(link: string) {
-  return [dashboardLinkText(link), { link_preview_options: { is_disabled: true } }] as const;
-}
-
-export function dashboardLinkText(link: string): string {
-  return [
-    "Your dashboard. This link signs you in once, within 10 minutes:",
-    link,
-    "",
-    "It shows your applications, the emails behind them and the cards waiting for you. Approving still happens here in Telegram. Send /dashboard again whenever you need a new link.",
-  ].join("\n");
-}
+export const CANCELLED_TEXT = "Cancelled. Nothing changed.";
+export const CONFIRM_NOT_OWNER_TEXT = "Only the account owner can confirm this.";
+export const CONFIRM_EXPIRED_TEXT = "This confirmation expired. Nothing changed; send the command again.";
+export const ALREADY_DELETED_TEXT = "Already deleted.";
+export const ALREADY_DISCONNECTED_TEXT = "Gmail was already disconnected.";
 
 export const NOT_CONNECTED_FOR_DISCONNECT_TEXT = "Gmail isn't connected, so there's nothing to disconnect. To erase your data, use /delete_my_data.";
 
 export const NOTHING_STORED_TEXT = "I don't store anything about you.";
 
-export const NOT_REGISTERED_TEXT = "Send /start first so I can register you.";
+// ---------- Anything else ----------
 
-export const NOT_CONNECTED_TEXT = "Connect your Gmail first with /connect.";
+export const NOT_REGISTERED_TEXT = "Send /start first so I can set you up.";
 
-export const UNKNOWN_COMMAND_TEXT = "I don't know that command. Send /help to see what I can do.";
+export const NOT_CONNECTED_TEXT = "Connect your Gmail first with /connect, or try /demo to see me work on sample emails.";
+
+export const UNKNOWN_COMMAND_TEXT = "I don't know that command. /help lists what I can do.";
+
+export const TEXT_ONLY_TEXT = "I can only read text. Ask me about your applications, or send /help.";

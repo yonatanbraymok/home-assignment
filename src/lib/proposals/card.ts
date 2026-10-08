@@ -1,11 +1,12 @@
 import { InlineKeyboard } from "grammy";
 import type { ApplicationStatus, Confidence, ProposalKind, ProposalState } from "@/generated/prisma/enums";
 import { formatDateTime } from "@/lib/format";
-import { gmailMessageUrl } from "@/lib/gmail/links";
+import { emailLink } from "@/lib/gmail/links";
 import type { Candidate } from "./create";
 import { STATUS_LABEL } from "./rules";
 
-// Proposal cards are rendered with Telegram's HTML parse mode; every dynamic value is escaped.
+// Proposal cards, in Telegram's HTML parse mode; every dynamic value is escaped. Short on purpose:
+// the change, the reason, the verbatim quote and where it came from, then what happens next.
 
 const MAX_QUOTE_CHARS = 600;
 const MAX_BUTTON_CHARS = 60;
@@ -48,38 +49,37 @@ export function renderCard(card: CardData): { text: string; keyboard: InlineKeyb
   const choosing = needsChoice(card);
   const roleTitle = card.application?.roleTitle ?? card.roleTitle;
   const jobRef = card.application?.jobRef ?? card.jobRef;
-  const title =
-    card.kind === "CREATE_APPLICATION" ? "Track a new application" : choosing ? "Which application is this?" : "Proposed update";
-  const change =
+  const to = STATUS_LABEL[card.toStatus];
+  // The first line is what a notification shows, so it carries the news.
+  const headline =
     card.kind === "CREATE_APPLICATION"
-      ? `New application · ${STATUS_LABEL[card.toStatus]}`
+      ? `🆕 <b>New application: ${e(card.company)} (${to})</b>`
       : choosing
-        ? `The email says: ${STATUS_LABEL[card.toStatus]}`
-        : `${STATUS_LABEL[card.fromStatus!]} → ${STATUS_LABEL[card.toStatus]}`;
+        ? `❓ <b>Which ${e(card.company)} application?</b>`
+        : `📩 <b>${e(card.company)}: ${STATUS_LABEL[card.fromStatus!]} → ${to}</b>`;
   const quote = card.evidenceQuote.length > MAX_QUOTE_CHARS ? `${card.evidenceQuote.slice(0, MAX_QUOTE_CHARS)}…` : card.evidenceQuote;
-  const sender = card.email.fromName ? `${card.email.fromName} <${card.email.fromAddress}>` : card.email.fromAddress;
+  const { fromName, fromAddress } = card.email;
+  const sender = fromName ? `${fromName} (${fromAddress.split("@")[1] ?? fromAddress})` : fromAddress;
   const savesJobRef = card.state === "PENDING" && !choosing && card.jobRef && card.application && !card.application.jobRef;
 
   const lines = [
-    `📩 <b>${title} · ${e(card.company)}</b>`,
+    headline,
     e(roleTitle) + (jobRef ? ` · Job ID ${e(jobRef)}` : ""),
-    `<b>${e(change)}</b>`,
+    ...(choosing ? [`The email says: <b>${to}</b>`] : []),
     "",
-    `<b>Why:</b> ${e(card.reasoning)}`,
-    "",
-    "<b>Evidence (verbatim from the email):</b>",
+    e(card.reasoning),
     `<blockquote>${e(quote)}</blockquote>`,
-    `From: ${e(sender)}`,
-    `Subject: ${e(card.email.subject)}`,
-    `Received: ${formatDateTime(card.email.receivedAt)}`,
-    `Confidence: <b>${card.confidence}</b>`,
+    `<i>Quoted from ${e(sender)} · ${formatDateTime(card.email.receivedAt)} · ${card.confidence.toLowerCase()} confidence</i>`,
     ...card.warnings.map((w) => `⚠️ ${e(w)}`),
     ...(savesJobRef ? [`Approving also saves job ID ${e(card.jobRef!)} to this application.`] : []),
     "",
     statusLine(card, choosing),
   ];
 
-  const keyboard = new InlineKeyboard().url("🔗 Open email", gmailMessageUrl(card.gmailAddress, card.email.gmailMessageId)).row();
+  const keyboard = new InlineKeyboard();
+  // Sample emails (the demo) have nothing to open in Gmail.
+  const link = emailLink(card.gmailAddress, card.email.gmailMessageId);
+  if (link) keyboard.url("🔗 Open email", link).row();
   const queued = card.state === "PENDING" && !card.expiresAt;
   const open = !queued && (card.state === "PENDING" || card.state === "FAILED");
   if (open && choosing) {
@@ -112,25 +112,25 @@ function statusLine(card: CardData, choosing: boolean): string {
       return (
         review +
         (choosing
-          ? `<i>Tap the application this email is about to mark it ${STATUS_LABEL[card.toStatus]}. Nothing changes until you tap. Expires ${formatDateTime(card.expiresAt)}.</i>`
+          ? `<i>Tap the application this email is about. Nothing changes until you do. Expires ${formatDateTime(card.expiresAt)}.</i>`
           : `<i>Nothing changes until you tap Approve. Expires ${formatDateTime(card.expiresAt)}.</i>`)
       );
     }
     case "EXECUTED":
       return card.kind === "CREATE_APPLICATION"
-        ? `✅ <b>Approved.</b> Now tracking ${name} as ${STATUS_LABEL[card.toStatus]}.`
+        ? `✅ <b>Approved.</b> Now tracking ${name} (${STATUS_LABEL[card.toStatus]}).`
         : `✅ <b>Approved.</b> ${name} is now ${STATUS_LABEL[card.toStatus]}.`;
     case "REJECTED":
-      return choosing ? "❌ <b>Ignored.</b> Nothing was changed." : "❌ <b>Rejected.</b> Nothing was changed.";
+      return choosing ? "❌ <b>Ignored.</b> Nothing changed." : "❌ <b>Rejected.</b> Nothing changed.";
     case "EXPIRED":
-      return "⌛ <b>Expired</b> without a decision. Nothing was changed.";
+      return "⌛ <b>Expired</b> without a decision. Nothing changed.";
     case "SUPERSEDED":
-      return "↪️ <b>Replaced</b> by a newer proposal for the same application. Nothing was changed.";
+      return "↪️ <b>Replaced</b> by a newer card for the same application. Nothing changed.";
     case "STALE":
       return card.application && card.kind === "UPDATE_STATUS"
-        ? `⚠️ <b>Not applied:</b> the application changed since this proposal (it is now ${STATUS_LABEL[card.application.status]}).`
-        : "⚠️ <b>Not applied:</b> this application is already being tracked.";
+        ? `⚠️ <b>Not applied:</b> the application changed after this card was made (it's now ${STATUS_LABEL[card.application.status]}).`
+        : "⚠️ <b>Not applied:</b> this application is already tracked.";
     case "FAILED":
-      return `❌ <b>Couldn't apply it. Nothing was changed.</b> ${e(card.failureReason ?? "")} You can try again.`;
+      return `❌ <b>Couldn't apply it.</b> Nothing changed. ${card.failureReason ? `${e(card.failureReason)} ` : ""}Tap Retry to try again.`;
   }
 }

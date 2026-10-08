@@ -50,9 +50,13 @@ test("card escapes every dynamic value and shows buttons only while pending", ()
   const { text, keyboard } = renderCard(card);
   assert.match(text, /AT&amp;T &lt;Labs&gt;/);
   assert.match(text, /Says &lt;b&gt;no&lt;\/b&gt;\./);
-  assert.match(text, /Applied → Rejected/);
+  assert.match(text, /^📩 <b>AT&amp;T &lt;Labs&gt;: Applied → Rejected<\/b>/);
   const buttons = keyboard.inline_keyboard.flat().map((b) => ("callback_data" in b ? b.callback_data : b.text));
   assert.deepEqual(buttons, ["🔗 Open email", "p:a:cl1", "p:r:cl1"]);
+
+  // Sample emails (the demo) have nothing to open in Gmail, so no button.
+  const sample = renderCard({ ...card, email: { ...card.email, gmailMessageId: "demo:3" } });
+  assert.ok(!sample.keyboard.inline_keyboard.flat().some((b) => "url" in b));
 
   const decided = renderCard({ ...card, state: "EXECUTED" });
   assert.match(decided.text, /Approved/);
@@ -75,8 +79,8 @@ test("a which-application card offers each candidate, 'new' and 'ignore' instead
     ],
   };
   const { text, keyboard } = renderCard(ambiguous);
-  assert.match(text, /Which application is this\?/);
-  assert.match(text, /The email says: Rejected/);
+  assert.match(text, /^❓ <b>Which AT&amp;T &lt;Labs&gt; application\?<\/b>/);
+  assert.match(text, /The email says: <b>Rejected<\/b>/);
   const data = keyboard.inline_keyboard.flat().flatMap((b) => ("callback_data" in b ? [b.callback_data] : []));
   assert.deepEqual(data, ["p:c:cl1:0", "p:c:cl1:1", "p:c:cl1:n", "p:r:cl1"]);
 });

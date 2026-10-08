@@ -6,9 +6,12 @@ A Telegram agent that keeps a student's job applications up to date from their G
 - **Web app (dashboard):** https://home-assignment-henna.vercel.app
 - **How and why it's built this way:** [DECISIONS.md](DECISIONS.md)
 
+**For reviewers:** [how action approval works for testers](#how-action-approval-works-for-testers-who-approves-and-where) · [how it's deployed, and the environment variables to redeploy it](#deployment-and-environment-variables-redeploy-it-yourself)
+
 ## Try it
 
 ### Option A: the demo, in two minutes, no Gmail needed
+Disclosure: The demo does not keep at with the platform's feature, and does not mimic the cron job working every 5 minutes to scan your mail. It only displays how an alert would look like, and let you explore the dashboard.
 
 1. Open **https://t.me/jobapplicationtracker1907bot?start=demo** and tap **Start**. The bot loads 11 fictional emails into your own account and the real agent reads them (about 30 seconds).
 2. You get a summary: *6 updates from 5 companies*. Tap **▶️ Start review**.
@@ -23,7 +26,10 @@ A Telegram agent that keeps a student's job applications up to date from their G
 2. Send **/sync**. The bot reads the last 60 days, sends one summary, then shows what it found one card at a time.
 3. To see a live card, email yourself something a recruiter would send (or forward one), e.g. *"We'd like to invite you to an interview for the Backend Intern role."* The bot checks Gmail every 5 minutes; **/sync** checks right away.
 
-## Who approves, and where
+## How action approval works for testers (who approves, and where)
+
+**Who approves: you, for your own tracker. Where: in your private Telegram chat with the bot, by tapping ✅ Approve on the card.**
+
 
 - **The action:** creating or updating an application in your tracker (a new application, a status change, a job ID saved).
 - **Who approves:** only the Telegram account that owns the tracker, by tapping **Approve** on that specific card in its private chat with the bot. As a tester, that's you, for your own tracker. One card is one change; there is no "approve all".
@@ -52,11 +58,11 @@ A Telegram agent that keeps a student's job applications up to date from their G
 
 ## Good to know
 
-- **Budget:** each person gets $5 of AI a month, and the whole service $25. At 80% you get a Telegram message and a lower daily question limit. When a budget is used up, the agent pauses until the 1st and tells you so. Approving, /status and the web app keep working.
+- **Budget:** each person gets \$5 of AI a month, and the whole service \$25. At 80% you get a Telegram message and a lower daily question limit. When a budget is used up, the agent pauses until the 1st and tells you so. Approving, /status and the web app keep working.
 - **Gmail:** read-only, checked every 5 minutes. Only job-related emails are kept in full. For anything else, only the sender and subject are stored.
 - **Google:** the app is unverified, so it shows a warning and allows up to 100 Google accounts.
 
-## How it's deployed, and how to redeploy it
+## Deployment and environment variables (redeploy it yourself)
 
 **The deployment:**
 - One Next.js app on **Vercel** (Washington, D.C. region) hosts the website, the Telegram webhook, the MCP endpoint, the Google sign-in callback and the sync endpoint.
@@ -94,7 +100,7 @@ A Telegram agent that keeps a student's job applications up to date from their G
 
 ### Environment variables
 
-No keys or tokens are committed. Set them in Vercel; for local use, copy [`.env.example`](.env.example) to `.env.local`, which git ignores.
+**No keys or tokens are committed to this repository.** Set them in Vercel's project settings; for local use, copy [`.env.example`](.env.example) to `.env.local`, which git ignores.
 
 | Variable | What it is |
 |---|---|
@@ -115,4 +121,4 @@ No keys or tokens are committed. Set them in Vercel; for local use, copy [`.env.
 
 ### Tests
 
-`npm test` runs the unit tests. `npm run evals` runs the evals that make no model calls, and `npm run evals -- --all` runs all ten, including the five that call the model (about $0.05). What each eval proves is in [DECISIONS.md §11](DECISIONS.md#11-evals).
+`npm test` runs the unit tests. `npm run evals` runs the evals that make no model calls, and `npm run evals -- --all` runs all ten, including the five that call the model (about \$0.05). What each eval proves is in [DECISIONS.md §11](DECISIONS.md#11-evals).

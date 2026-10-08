@@ -213,22 +213,17 @@ The model evals check structured fields and facts, not wording, and are run more
 
 ### 12.1 An approved action's external call fails halfway. What happens, and what does the user see?
 
-The action is a database write, run as one Postgres transaction. It claims the card (only a pending card can be claimed, so a double tap can't run it twice), checks that the application hasn't changed since the card was made, then writes the change and its audit row.
-
-If anything fails partway (the connection drops, a constraint refuses, the time limit passes), the whole transaction rolls back, so nothing is half-applied. The card is then marked failed. The user sees "Couldn't apply it. Nothing changed; you can retry" and the card redrawn with **Retry** and **Reject**. If the application changed in the meantime, the card says so instead of overwriting it.
-
-Telegram is the other external call. A card is only a view of the database, redrawn after the commit. If Telegram fails then, the change is already saved: the next tap answers "Already decided" and redraws the card, and `/pending` re-sends any open card.
+The action's external call is actually a PostgreSQL transacation.
+if anything fails partway for any reason, the entire transaction rolls back compeletely, no half applied states. The card is marked as dailed, and the user gets a Couldnt apply error message, then he can retry or reject.
 
 ### 12.2 Live for a month: how would I find out it's giving wrong answers before someone relies on them?
 
 Most wrong answers show up before anyone relies on them: every card shows the sentence it rests on, with the email one tap away, and nothing changes without a tap. To find the rest:
-- **Watch what's already logged:** how often owners reject cards, "which application?" cards, quotes that failed the check, failed analyses. A rising reject rate means the classifier is drifting.
-- **Turn every Reject into a test:** a rejected card is a labelled mistake; with consent, add it to the classifier eval.
-- **Run the model evals on a schedule** and before any model or prompt change, and alert on failure. A model behind the same name can change.
-- **Look at what was never read:** sample the senders and subjects of emails the prefilter dropped, since a miss is otherwise invisible.
+we can watch whats already logged in our db: how often owners reject cards, "which application?" cards, quotes that failed the check, failed analyses. A rising reject rate means the classifier is drifting.
+a rejected card is a labelled mistake; with consent, add it to the classifier eval.
 
 ### 12.3 Which part am I least confident in, and why?
 
-The emails it never shows. A wrong card is visible, and the owner rejects it; a missed email is invisible. Two places can drop a real job email: the free prefilter, and the classifier calling it not job-related. A recruiter writing from a personal address with a vague subject is the kind of email that slips through. The evals measure what the agent does with the emails it reads, not how many real ones it never reads. I'd measure that by sampling what the prefilter dropped and asking users to flag what they missed.
+The budget flow. The brief describes one budget for a team: under \$50 a month for 5 people, each using it about 20 times a working day. Since this is a personal tool that anyone can join, I turned it into two caps: \$5 of AI per person and \$25 shared, with a lower level at 80% (fewer questions a day, a lighter model for emails) and a pause when its used up. It works and it's tested, but it feels forced:
+Its a lot of machinery for a limit that's far away. Real use is about 1% of a person's allowance, so the levels and notices will almost never fire.
 
-Second, matching without a job ID. When the email names neither the role nor an ID, the card asks which application it's about. But a match on a similar company name ("Microsoft" for "Microsoft Azure") is proposed with a warning rather than asked, and a tired user may approve it.

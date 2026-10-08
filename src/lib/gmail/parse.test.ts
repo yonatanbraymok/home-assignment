@@ -72,3 +72,13 @@ test("stripQuotedHistory keeps only the newest message", () => {
 
   assert.equal(stripQuotedHistory("Line one\n> quoted\nLine two"), "Line one\nLine two");
 });
+
+test("a forward with nothing added keeps the forwarded message; a note above a forward stays alone", () => {
+  const forward = "---------- Forwarded message ---------\nFrom: Wix Careers <careers@wix.com>\nDate: Tue, 7 Oct 2026\nSubject: Interview invitation\nTo: Dana\n\nWe'd like to invite you to an interview.";
+  const kept = stripQuotedHistory(forward);
+  assert.match(kept, /^From: Wix Careers <careers@wix\.com>/);
+  assert.match(kept, /We'd like to invite you to an interview\.$/);
+  assert.equal(stripQuotedHistory(`FYI\n\n${forward}`), "FYI");
+  // Gmail's Hebrew interface: the header lines are in Hebrew, the marker isn't.
+  assert.match(stripQuotedHistory("---------- Forwarded message ---------\nמאת: Yonatan <y@gmail.com>\nSubject: Application Confirmation\n\nThank you for applying."), /Thank you for applying\.$/);
+});

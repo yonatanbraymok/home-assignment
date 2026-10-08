@@ -17,13 +17,14 @@ export const metadata = { title: `Dashboard · ${APP_NAME}` };
 export default function DashboardLayout({ children }: LayoutProps<"/dashboard">) {
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-10 border-b bg-background">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-          <Link href="/dashboard" className="flex items-center gap-2.5 font-heading text-[1.05rem] font-bold tracking-tight">
-            <BrandMark />
+      <header className="sticky top-0 z-10 bg-background/85 backdrop-blur-md">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-8 gap-y-3 px-4 py-4 lg:h-20 lg:py-0">
+          <Link href="/dashboard" className="flex items-center gap-2.5 font-heading text-[1.05rem] font-extrabold tracking-tight">
+            <BrandMark className="size-9" />
             {APP_NAME}
           </Link>
-          <nav className="order-last flex w-full gap-5 text-sm text-muted-foreground sm:order-none sm:w-auto">
+          {/* A segmented pill: the current section is the white tab lifted off the track. */}
+          <nav className="order-last flex w-full gap-1 rounded-full bg-secondary p-1 text-sm font-semibold sm:order-none sm:w-auto">
             {/* Reading the URL suspends on pages with an id in it: unmarked links until it streams in. */}
             <Suspense fallback={<NavLinksFallback />}>
               <NavLinks />
@@ -46,7 +47,7 @@ export default function DashboardLayout({ children }: LayoutProps<"/dashboard">)
           </div>
         </div>
       </header>
-      {/* White cards on the lavender paper. */}
+      {/* White cards and pastel stages on the off-white paper. */}
       <div className="flex-1 bg-background">
         <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:py-8">
           {/* On phones the budget gets its own row under the header. */}
@@ -93,11 +94,26 @@ async function BudgetMeter() {
 async function Account() {
   const user = await getCurrentUser();
   return (
-    <form action={logout} className="flex items-center gap-2 text-sm">
-      <span className="hidden max-w-32 truncate text-muted-foreground sm:inline">{user.name}</span>
-      <Button type="submit" variant="outline" size="sm">
+    <form action={logout} className="flex items-center gap-3 text-sm">
+      <span className="hidden items-center gap-2 font-semibold sm:flex">
+        <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-full bg-blush text-xs font-bold text-ink">
+          {initials(user.name)}
+        </span>
+        <span className="max-w-32 truncate">{user.name}</span>
+      </span>
+      <Button type="submit" variant="secondary">
         Log out
       </Button>
     </form>
   );
 }
+
+// "Maya Lindqvist" → "ML", "@maya" → "M".
+const initials = (name: string) =>
+  name
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join("");

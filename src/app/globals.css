@@ -3,25 +3,35 @@
 @import "shadcn/tailwind.css";
 @plugin "@tailwindcss/typography"; /* prose, for the privacy and terms pages */
 
-/* Dark mode follows the OS setting; there is no theme switch. */
-@custom-variant dark (@media (prefers-color-scheme: dark));
+/* Dark mode follows the OS setting; there is no theme switch. Inside a .theme-light scope (the
+   pastel stages) everything stays light, dark: variants included. */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:not(.theme-light, .theme-light *) {
+      @slot;
+    }
+  }
+}
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-dm-sans); /* set by next/font in layout.tsx */
+  --font-sans: var(--font-jakarta); /* set by next/font in layout.tsx */
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-grotesk);
-  /* The palette by name, for the few places that need it outright (landing page, badges).
-     Zinc base, one blue for actions (#0085CC, darker on hover), a light blue to highlight. */
+  --font-heading: var(--font-jakarta);
+  /* The palette by name, for the places that need it outright (landing page, stages, badges).
+     Off-white paper, solid black for actions, pastel stages that hold white cards. The blue stays
+     as a secondary accent (assessment badges, links in the mocks). */
   --color-paper: #ffffff;
-  --color-ink: #18181b;
+  --color-ink: #111111;
+  --color-lilac: #d9b8ff;
+  --color-lime: #d4f36b;
+  --color-sky: #a9d8ff;
+  --color-blush: #ffc8e4;
   --color-brand: #0085cc;
   --color-brand-dark: #0073b3;
   --color-highlight: #cdeafa;
   --color-tint: #e6f3fb;
-  --color-night: #18181b;
-  --color-night-card: #27272a;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -61,17 +71,17 @@
 }
 
 :root {
-  /* Zinc base: white page, zinc-50 cards, zinc-200 borders, zinc-900 text, zinc-500 secondary
-     text. The one action colour is #0085CC (hover #0073B3). */
-  --background: #ffffff;
+  /* Off-white page, white cards that float on soft shadows, zinc-200 borders, near-black text.
+     The action colour is solid black. */
+  --background: #fcfcfb;
   --foreground: #18181b;
-  --card: #fafafa;
+  --card: #ffffff;
   --card-foreground: #18181b;
   --popover: #ffffff;
   --popover-foreground: #18181b;
-  --primary: #0085cc;
+  --primary: #111111;
   --primary-foreground: #ffffff;
-  --secondary: #f4f4f5;
+  --secondary: #f1f1ee;
   --secondary-foreground: #18181b;
   --muted: #f4f4f5;
   --muted-foreground: #71717a;
@@ -80,24 +90,48 @@
   --destructive: #e11d48;
   --border: #e4e4e7;
   --input: #e4e4e7;
-  --ring: #0085cc;
-  --chart-1: #0085cc;
+  --ring: #111111;
+  --chart-1: #111111;
   --chart-2: #71717a;
   --chart-3: #a1a1aa;
   --chart-4: #3f3f46;
   --chart-5: #18181b;
-  --radius: 0.875rem;
+  --radius: 1.25rem;
   --sidebar: #fafafa;
   --sidebar-foreground: #18181b;
-  --sidebar-primary: #0085cc;
+  --sidebar-primary: #111111;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #f4f4f5;
   --sidebar-accent-foreground: #18181b;
   --sidebar-border: #e4e4e7;
-  --sidebar-ring: #0085cc;
+  --sidebar-ring: #111111;
+}
+
+/* A stage keeps the light theme in dark mode too: its pastel and white cards only work light. */
+.theme-light {
+  --background: #ffffff;
+  --foreground: #18181b;
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+  --primary: #111111;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f1ee;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #52525b;
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
+  --destructive: #e11d48;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #111111;
+  color: var(--foreground);
 }
 
 @media (prefers-color-scheme: dark) {
+  /* Black on black would vanish: in the dark the action colour flips to white. */
   :root {
     --background: #09090b;
     --foreground: #fafafa;
@@ -105,8 +139,8 @@
     --card-foreground: #fafafa;
     --popover: #18181b;
     --popover-foreground: #fafafa;
-    --primary: #0085cc;
-    --primary-foreground: #ffffff;
+    --primary: #fafafa;
+    --primary-foreground: #111111;
     --secondary: #27272a;
     --secondary-foreground: #fafafa;
     --muted: #27272a;
@@ -116,15 +150,15 @@
     --destructive: #fb7185;
     --border: #27272a;
     --input: #3f3f46;
-    --ring: #38a9e6;
+    --ring: #fafafa;
     --sidebar: #18181b;
     --sidebar-foreground: #fafafa;
-    --sidebar-primary: #0085cc;
-    --sidebar-primary-foreground: #ffffff;
+    --sidebar-primary: #fafafa;
+    --sidebar-primary-foreground: #111111;
     --sidebar-accent: #27272a;
     --sidebar-accent-foreground: #fafafa;
     --sidebar-border: #27272a;
-    --sidebar-ring: #38a9e6;
+    --sidebar-ring: #fafafa;
   }
 }
 
@@ -142,10 +176,10 @@
   h2,
   h3 {
     font-family: var(--font-heading);
-    letter-spacing: -0.02em;
+    letter-spacing: -0.035em;
   }
   ::selection {
-    background: var(--color-highlight);
+    background: var(--color-lilac);
     color: var(--color-ink);
   }
   @media (prefers-reduced-motion: no-preference) {
@@ -155,13 +189,20 @@
   }
 }
 
-/* The landing page's dark section: a faint grid on zinc-900. */
-.grid-bg {
-  background-color: var(--color-night);
-  background-image:
-    linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px);
-  background-size: 56px 56px;
+/* The playful shapes bob gently; still for reduced motion. */
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--r, 0deg));
+  }
+  50% {
+    transform: translateY(-12px) rotate(var(--r, 0deg));
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .float {
+    animation: bob 6s ease-in-out infinite;
+  }
 }
 
 /* Fades a row out at both ends (the hero's fan of cards). */

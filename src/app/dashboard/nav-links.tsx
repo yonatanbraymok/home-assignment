@@ -32,7 +32,10 @@ function Links({ isActive }: { isActive: (href: string) => boolean }) {
         key={href}
         href={href}
         aria-current={active ? "page" : undefined}
-        className={cn("transition-colors hover:text-foreground", active && "font-medium text-foreground")}
+        className={cn(
+          "flex-1 rounded-full px-4 py-2 text-center text-muted-foreground transition sm:flex-none",
+          active ? "bg-card text-foreground shadow-[0_8px_20px_-12px_rgb(17_17_17/0.45)]" : "hover:text-foreground",
+        )}
       >
         {label}
       </Link>

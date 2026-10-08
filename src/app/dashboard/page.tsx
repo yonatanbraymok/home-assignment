@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { FloatPanel, Stage } from "@/components/stage";
 import { getOverview, type CurrentUser } from "@/lib/dashboard/data";
 import { botUrl } from "@/lib/env";
 import { formatDateTime, formatDay, formatUsd } from "@/lib/format";
@@ -17,8 +18,8 @@ import { ApplicationsCard, type ApplicationRow } from "./applications-table";
 import { WaitingBadge, describeChange } from "./proposal-badges";
 import { WaitingSlides } from "./waiting-slides";
 
-// The overview, as a bento grid of cards: budget and totals beside what waits for the owner, then
-// the pipeline beside a chat with the agent. Read-only: approving
+// The overview: budget and totals on a lilac stage beside what waits for the owner on a lime one,
+// then the pipeline beside a chat with the agent, as white cards. Read-only: approving
 // and rejecting stay in Telegram, so there are no buttons for them here.
 export default function DashboardPage() {
   return (
@@ -67,27 +68,27 @@ async function Overview() {
 function SummaryCard({ data, className }: { data: OverviewData; className?: string }) {
   const { stats } = data;
   return (
-    <Card className={className}>
-      <CardContent className="grid h-full gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-center">
+    <Stage tone="lilac" className={cn("p-6 lg:p-7", className)}>
+      <div className="grid h-full gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-center">
         <BudgetMonitor budget={data.budget} forecastUsd={data.forecastUsd} />
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4 md:border-l md:pl-6 lg:grid-cols-2">
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-2">
           <Stat label="Tracked" value={stats.total} note={stats.response_rate_percent === null ? "none yet" : `${stats.response_rate_percent}% got a reply`} />
           <Stat label="In progress" value={stats.open} note={`${stats.no_reply_yet} waiting for a reply`} />
           <Stat label="Interviews" value={stats.by_status.INTERVIEW ?? 0} note={plural(stats.by_status.ASSESSMENT ?? 0, "online assessment")} />
           <Stat label="Offers" value={stats.by_status.OFFER ?? 0} note={`${stats.by_status.REJECTED ?? 0} rejected`} />
         </dl>
-      </CardContent>
-    </Card>
+      </div>
+    </Stage>
   );
 }
 
 function Stat({ label, value, note }: { label: string; value: number; note: string }) {
   return (
-    <div className="flex flex-col gap-1">
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="text-3xl font-semibold tracking-tight tabular-nums">{value}</dd>
+    <FloatPanel className="flex flex-col gap-1 rounded-[1.4rem] p-4 shadow-[0_24px_48px_-28px_rgb(17_17_17/0.35)]">
+      <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
+      <dd className="text-3xl font-extrabold tracking-tight tabular-nums">{value}</dd>
       <dd className="text-xs text-muted-foreground">{note}</dd>
-    </div>
+    </FloatPanel>
   );
 }
 
@@ -109,18 +110,18 @@ function BudgetMonitor({ budget, forecastUsd }: { budget: OverviewData["budget"]
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium">AI budget</p>
+        <p className="font-heading text-lg font-bold">AI budget</p>
         <Badge className={state.className}>{state.text}</Badge>
       </div>
       <p className="flex items-baseline gap-1.5">
-        <span className="text-3xl font-semibold tracking-tight tabular-nums">{usd(mine.spentUsd)}</span>
-        <span className="text-sm text-muted-foreground">of your {usd(mine.capUsd)} this month</span>
+        <span className="text-5xl font-extrabold tracking-[-0.05em] tabular-nums">{usd(mine.spentUsd)}</span>
+        <span className="text-sm font-medium text-ink/70">of your {usd(mine.capUsd)} this month</span>
       </p>
-      <Progress value={mine.percent} className={cn("h-1.5", state.bar)} aria-label={`Your AI allowance: ${usd(mine.spentUsd)} of ${usd(mine.capUsd)} used this month`} />
-      <p className="text-xs text-muted-foreground">
+      <Progress value={mine.percent} className={cn("h-2.5 bg-white/70", state.bar)} aria-label={`Your AI allowance: ${usd(mine.spentUsd)} of ${usd(mine.capUsd)} used this month`} />
+      <p className="text-xs font-medium text-ink/70">
         Resets {until}
         {forecastUsd !== null && ` · about ${usd(forecastUsd)} by month end at this pace`} ·{" "}
-        <Link href="/dashboard/settings#budget" className="font-medium text-primary underline-offset-4 hover:underline">
+        <Link href="/dashboard/settings#budget" className="font-bold text-ink underline underline-offset-2">
           Details
         </Link>
       </p>
@@ -133,7 +134,7 @@ function BudgetMonitor({ budget, forecastUsd }: { budget: OverviewData["budget"]
 function WaitingCard({ waiting, className }: { waiting: OverviewData["waiting"]; className?: string }) {
   const n = waiting.length;
   return (
-    <Card id="waiting" className={cn("scroll-mt-20", className)}>
+    <Card id="waiting" className={cn("theme-light scroll-mt-24 rounded-[2.5rem] bg-lime shadow-none ring-0 [--card-spacing:--spacing(5)]", className)}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           Waiting for your approval
@@ -152,35 +153,37 @@ function WaitingCard({ waiting, className }: { waiting: OverviewData["waiting"];
             Nothing is waiting for you.
           </p>
         ) : (
-          <WaitingSlides
-            slides={waiting.map((p) => (
-              <div key={p.id} className="flex flex-col gap-1.5 pr-px">
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="truncate font-medium">
-                    {p.applicationId ? (
-                      <Link href={`/dashboard/applications/${p.applicationId}`} className="hover:underline">
-                        {p.company}
-                      </Link>
-                    ) : (
-                      p.company
-                    )}
+          <FloatPanel className="p-4">
+            <WaitingSlides
+              slides={waiting.map((p) => (
+                <div key={p.id} className="flex flex-col gap-1.5 pr-px">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="truncate font-medium">
+                      {p.applicationId ? (
+                        <Link href={`/dashboard/applications/${p.applicationId}`} className="hover:underline">
+                          {p.company}
+                        </Link>
+                      ) : (
+                        p.company
+                      )}
+                    </p>
+                    {p.expiresAt && <span className="shrink-0 text-xs text-muted-foreground">expires {formatDay(p.expiresAt)}</span>}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {describeChange(p)} · {p.roleTitle}
+                    {p.jobRef && ` · Job ID ${p.jobRef}`}
                   </p>
-                  {p.expiresAt && <span className="shrink-0 text-xs text-muted-foreground">expires {formatDay(p.expiresAt)}</span>}
+                  <blockquote className="line-clamp-2 border-l-[3px] border-lilac pl-2.5 text-sm">“{p.evidenceQuote}”</blockquote>
+                  <WaitingBadge proposal={p} />
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {describeChange(p)} · {p.roleTitle}
-                  {p.jobRef && ` · Job ID ${p.jobRef}`}
-                </p>
-                <blockquote className="line-clamp-2 border-l-2 border-primary/60 pl-2.5 text-sm">“{p.evidenceQuote}”</blockquote>
-                <WaitingBadge proposal={p} />
-              </div>
-            ))}
-          />
+              ))}
+            />
+          </FloatPanel>
         )}
       </CardContent>
       {n > 0 && (
-        <CardFooter>
-          <TelegramButton variant="outline" />
+        <CardFooter className="border-0 bg-transparent">
+          <TelegramButton variant="default" />
         </CardFooter>
       )}
     </Card>

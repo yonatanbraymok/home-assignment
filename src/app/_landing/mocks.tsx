@@ -17,9 +17,9 @@ const lightOnly = (classes: string) => classes.split(" ").filter((c) => !c.start
 /** One tracked application, as the hero's fan of cards shows it. */
 export function MockApplication({ company, role, status, className, style }: { company: string; role: string; status: ApplicationStatus; className?: string; style?: CSSProperties }) {
   return (
-    <div style={style} role="img" aria-label={`${company}, ${role}: ${STATUS_LABEL[status]}`} className={cn("rounded-2xl border border-ink/10 bg-white p-5 text-ink shadow-[0_1px_0_rgb(23_21_59/0.04)]", className)}>
+    <div style={style} role="img" aria-label={`${company}, ${role}: ${STATUS_LABEL[status]}`} className={cn("rounded-[1.75rem] bg-white shadow-[0_24px_48px_-28px_rgb(17_17_17/0.45)] p-5 text-ink", className)}>
       <div className="flex items-center justify-between">
-        <span className="grid size-10 place-items-center rounded-full bg-ink font-heading text-lg font-semibold text-paper">{company[0]}</span>
+        <span className="grid size-10 place-items-center rounded-full bg-ink font-heading text-lg font-semibold text-lime">{company[0]}</span>
         <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-medium", lightOnly(STATUS_STYLE[status]))}>{STATUS_LABEL[status]}</span>
       </div>
       <p className="mt-6 font-heading text-lg leading-tight font-semibold">{role}</p>
@@ -34,16 +34,16 @@ export function MockApplication({ company, role, status, className, style }: { c
 
 export function MockConnectCard() {
   return (
-    <div role="img" aria-label="Connect Gmail: read-only access" className="w-full max-w-sm rounded-2xl border border-ink/10 bg-white p-5 text-ink">
+    <div role="img" aria-label="Connect Gmail: read-only access" className="w-full max-w-sm rounded-[1.75rem] bg-white shadow-[0_24px_48px_-28px_rgb(17_17_17/0.45)] p-5 text-ink">
       <div className="flex items-center gap-3">
-        <div className="grid size-10 place-items-center rounded-full bg-tint">
-          <Mail className="size-5 text-brand" />
+        <div className="grid size-10 place-items-center rounded-full bg-sky">
+          <Mail className="size-5 text-ink" />
         </div>
         <div>
           <p className="font-heading font-semibold">Connect Gmail</p>
           <p className="text-xs text-ink/55">Read-only access</p>
         </div>
-        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-highlight px-2.5 py-0.5 text-xs font-medium">
+        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-lime px-2.5 py-0.5 text-xs font-semibold">
           <Lock className="size-3" />
           Secure
         </span>
@@ -51,26 +51,26 @@ export function MockConnectCard() {
       <ul className="mt-5 flex flex-col gap-2.5 text-sm">
         {["Reads your job emails only", "Can never send, delete or change mail", "Disconnect any time from Telegram"].map((line) => (
           <li key={line} className="flex items-center gap-2">
-            <Check className="size-4 shrink-0 text-brand" />
+            <Check className="size-4 shrink-0 text-emerald-600" />
             {line}
           </li>
         ))}
       </ul>
-      <div className="mt-6 flex h-10 items-center justify-center rounded-full bg-brand text-sm font-medium text-white">Connect Gmail</div>
+      <div className="mt-6 flex h-10 items-center justify-center rounded-full bg-ink text-sm font-semibold text-white">Connect Gmail</div>
     </div>
   );
 }
 
 export function MockEmail() {
   return (
-    <div role="img" aria-label="A new email: Interview Invitation - Google. We'd love to chat!" className="w-full max-w-sm rounded-2xl border border-ink/10 bg-white text-ink">
+    <div role="img" aria-label="A new email: Interview Invitation - Google. We'd love to chat!" className="w-full max-w-sm rounded-[1.75rem] bg-white shadow-[0_24px_48px_-28px_rgb(17_17_17/0.45)] text-ink">
       <div className="flex items-center gap-3 border-b border-ink/10 px-4 py-3">
-        <div className="grid size-9 shrink-0 place-items-center rounded-full bg-ink font-heading text-sm font-semibold text-paper">G</div>
+        <div className="grid size-9 shrink-0 place-items-center rounded-full bg-ink font-heading text-sm font-semibold text-lime">G</div>
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">Google Recruiting</p>
           <p className="text-xs text-ink/55">to me · 9:41</p>
         </div>
-        <span className="ml-auto rounded-full bg-tint px-2.5 py-0.5 text-xs font-medium text-brand-dark">Inbox</span>
+        <span className="ml-auto rounded-full bg-lilac/60 px-2.5 py-0.5 text-xs font-semibold text-[#5b21b6]">Inbox</span>
       </div>
       <div className="px-4 py-3.5">
         <p className="text-xs text-ink/55">Subject</p>
@@ -85,22 +85,22 @@ export function MockTelegramMessage() {
   return (
     <div role="img" aria-label={`${APP_NAME} in Telegram: Google requested an interview. Move status to Interview? Approve or Reject.`} className="w-full max-w-sm text-ink">
       <div className="flex items-end gap-2">
-        <BrandMark className="size-8 bg-brand text-white" />
-        <div className="min-w-0 rounded-2xl rounded-bl-sm border border-ink/10 bg-white px-3.5 py-2.5">
-          <p className="text-xs font-semibold text-brand">{APP_NAME}</p>
+        <BrandMark className="size-8" />
+        <div className="min-w-0 rounded-3xl rounded-bl-md bg-white shadow-[0_24px_48px_-28px_rgb(17_17_17/0.45)] px-4 py-3">
+          <p className="text-xs font-bold text-ink">{APP_NAME}</p>
           <p className="mt-1 text-sm">
-            Google requested an interview. Move status to <span className="rounded bg-highlight px-1 font-semibold">INTERVIEW</span>?
+            Google requested an interview. Move status to <span className="rounded-md bg-lilac/60 px-1 font-semibold">INTERVIEW</span>?
           </p>
-          <p className="mt-2 border-l-2 border-brand/60 pl-2 text-xs text-ink/55">“We&apos;d love to chat!”</p>
+          <p className="mt-2 border-l-[3px] border-lilac pl-2 text-xs text-ink/55">“We&apos;d love to chat!”</p>
           <p className="mt-1 text-right text-[10px] text-ink/40">9:41</p>
         </div>
       </div>
       <div className="mt-1.5 ml-10 grid grid-cols-2 gap-1.5 text-sm font-medium">
-        <div className="flex items-center justify-center gap-1.5 rounded-xl bg-white/90 py-2 text-brand">
+        <div className="flex items-center justify-center gap-1.5 rounded-full bg-ink py-2 text-white">
           <Check className="size-4" />
           Approve
         </div>
-        <div className="flex items-center justify-center gap-1.5 rounded-xl bg-white/90 py-2 text-rose-600">
+        <div className="flex items-center justify-center gap-1.5 rounded-full bg-white py-2 text-rose-600">
           <X className="size-4" />
           Reject
         </div>

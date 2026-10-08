@@ -16,7 +16,7 @@ export const metadata = { title: `Developers · ${APP_NAME}` };
 export default function DevelopersPage() {
   const endpoint = appUrl("/api/mcp");
   return (
-    <div className="flex flex-col gap-10">
+    <div className="flex flex-col gap-6">
       <div className="flex max-w-3xl flex-col gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">Developers: MCP access</h1>
         <p className="text-muted-foreground">
@@ -26,22 +26,22 @@ export default function DevelopersPage() {
         </p>
       </div>
 
-      <Section title="Endpoint">
-        <Table>
-          <TableBody>
-            <Row k="URL" v={<code className="break-all">{endpoint}</code>} />
-            <Row k="Transport" v="Streamable HTTP, stateless; JSON responses" />
-            <Row k="Authentication" v={<code>Authorization: Bearer &lt;your token&gt;</code>} />
-            <Row k="Limits" v="120 calls an hour per token; 10 new briefs an hour" />
-          </TableBody>
-        </Table>
-      </Section>
-
-      <Section title="Your token" id="token">
-        <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
+      {/* Bento: the endpoint and your token side by side, the docs full width below. */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Section title="Endpoint">
+          <Table>
+            <TableBody>
+              <Row k="URL" v={<code className="break-all">{endpoint}</code>} />
+              <Row k="Transport" v="Streamable HTTP, stateless; JSON responses" />
+              <Row k="Authentication" v={<code>Authorization: Bearer &lt;your token&gt;</code>} />
+              <Row k="Limits" v="120 calls an hour per token; 10 new briefs an hour" />
+            </TableBody>
+          </Table>
+        </Section>
+        <Suspense fallback={<Card className="justify-center px-4 text-sm text-muted-foreground">Loading your token…</Card>}>
           <TokenCard endpoint={endpoint} />
         </Suspense>
-      </Section>
+      </div>
 
       <Section title="Connect a client">
         <div className="flex min-w-0 flex-col gap-4">
@@ -57,7 +57,8 @@ export default function DevelopersPage() {
         </div>
       </Section>
 
-      <Section title="Tools">
+      <section className="flex min-w-0 flex-col gap-3">
+        <h2 className="text-lg font-semibold">Tools</h2>
         <div className="flex min-w-0 flex-col gap-4">
           <Card>
             <CardHeader>
@@ -101,10 +102,10 @@ export default function DevelopersPage() {
             </CardContent>
           </Card>
         </div>
-      </Section>
+      </section>
 
       <Section title="Who can change your data through MCP?">
-        <p className="max-w-3xl text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           No one. There are no write tools; the tools read through a database connection that refuses every write; every query is limited to
           the token&apos;s owner; and every call is logged. Status changes happen only when you tap Approve on a card in Telegram.
         </p>
@@ -115,10 +116,12 @@ export default function DevelopersPage() {
 
 function Section({ title, id, children }: { title: string; id?: string; children: React.ReactNode }) {
   return (
-    <section id={id} className="flex min-w-0 scroll-mt-20 flex-col gap-3">
-      <h2 className="text-lg font-semibold">{title}</h2>
-      {children}
-    </section>
+    <Card id={id} className="min-w-0 scroll-mt-20">
+      <CardHeader>
+        <CardTitle className="font-semibold">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="flex min-w-0 flex-col gap-4">{children}</CardContent>
+    </Card>
   );
 }
 
@@ -157,9 +160,9 @@ function Params({ rows }: { rows: [string, string, string][] }) {
 async function TokenCard({ endpoint }: { endpoint: string }) {
   const { mcp } = await getDevelopers();
   return (
-    <Card>
+    <Card id="token" className="scroll-mt-20">
       <CardHeader>
-        <CardTitle>MCP token</CardTitle>
+        <CardTitle className="font-semibold">Your token</CardTitle>
         <CardDescription>Shown once when created; only a hash is stored. Replacing or revoking it takes effect at once.</CardDescription>
         <CardAction>{mcp.createdAt ? <Badge variant="secondary">Active</Badge> : <Badge variant="outline">No token</Badge>}</CardAction>
       </CardHeader>

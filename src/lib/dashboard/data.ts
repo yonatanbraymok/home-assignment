@@ -8,7 +8,7 @@ import { budgetStatus, spendByPurpose, spendByUser, userCapUsd } from "@/lib/llm
 import { breakdownOf, forecastUsd, questionReserveUsd, scopeStatus } from "@/lib/llm/budget-policy";
 import { defaultModel } from "@/lib/llm/models";
 import { mcpTokenStatus } from "@/lib/mcp/auth";
-import { accountCountsFor, applicationDetailFor, findSessionUser, gettingStartedFor, overviewFor } from "./queries";
+import { accountCountsFor, applicationDetailFor, findSessionUser, gettingStartedFor, overviewFor, recentActivityFor } from "./queries";
 
 // The dashboard's data access layer. Pages get data only through these functions, and each one
 // takes the user from the session cookie, never from the URL or a form.
@@ -20,6 +20,7 @@ export type CurrentUser = {
   gmailConnectedAt: Date | null;
   gmailLastSyncAt: Date | null;
   gmailSyncError: string | null; // set while Google refuses access (revoked or expired)
+  demo: boolean; // sample emails loaded with /demo instead of Gmail
   isAdmin: boolean; // ADMIN_TELEGRAM_USER_ID: sees the service-wide budget
 };
 
@@ -42,6 +43,7 @@ export const getSignedInUser = cache(async (): Promise<CurrentUser | null> => {
     gmailConnectedAt: user.gmailConnectedAt,
     gmailLastSyncAt: user.gmailLastSyncAt,
     gmailSyncError: user.gmailSyncError,
+    demo: Boolean(user.demoAt),
     isAdmin: String(user.telegramUserId) === process.env.ADMIN_TELEGRAM_USER_ID?.trim(),
   };
 });
@@ -58,8 +60,13 @@ export const getBudget = cache(async () => budgetStatus((await getCurrentUser())
 
 export async function getOverview() {
   const user = await getCurrentUser();
-  const [overview, gettingStarted] = await Promise.all([overviewFor(user.id), gettingStartedFor(user.id)]);
-  return { user, ...overview, gettingStarted };
+  const [overview, gettingStarted, activity, budget] = await Promise.all([
+    overviewFor(user.id),
+    gettingStartedFor(user.id),
+    recentActivityFor(user.id),
+    getBudget(),
+  ]);
+  return { user, ...overview, gettingStarted, activity, budget, forecastUsd: forecastUsd(budget.user?.spentUsd ?? 0, new Date()) };
 }
 
 /** null when the application doesn't exist or belongs to someone else: the page can't tell which. */

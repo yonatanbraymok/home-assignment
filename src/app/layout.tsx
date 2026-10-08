@@ -15,15 +15,13 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: APP_NAME,
-  description: "Keeps your internship applications up to date from your Gmail, with every change approved in Telegram.",
+  description: "Your job hunt on autopilot: track applications directly from your inbox, securely approved via Telegram.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
+    // Smooth scrolling for the landing page's anchors; Next turns it off during navigation.
+    <html lang="en" data-scroll-behavior="smooth" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

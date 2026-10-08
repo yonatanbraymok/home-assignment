@@ -2,11 +2,11 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { ArrowLeft, ExternalLink, ShieldCheck, TriangleAlert } from "lucide-react";
-import type { ApplicationStatus } from "@/generated/prisma/enums";
-import { StatusBadge } from "@/components/status-badge";
+import { STATUS_DOT, StatusBadge } from "@/components/status-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getApplicationDetail } from "@/lib/dashboard/data";
 import { formatDateTime, formatDay } from "@/lib/format";
 import { emailLink } from "@/lib/gmail/links";
@@ -44,47 +44,46 @@ async function Detail({ params }: Pick<PageProps<"/dashboard/applications/[id]">
   const newestFirst = [...timeline].reverse();
   return (
     <>
-      <header className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-3xl font-semibold tracking-tight">{a.company}</h1>
-          <StatusBadge status={a.status} />
-        </div>
-        <p className="text-lg text-muted-foreground">
-          {a.roleTitle}
-          {a.jobRef && ` · Job ID ${a.jobRef}`}
-        </p>
-        <p className="text-sm text-muted-foreground">
-          {capitalize(STATUS_DESCRIPTION[a.status])} since {formatDay(a.statusSince)}
-          {a.appliedAt && ` · applied ${formatDay(a.appliedAt)}`} · {a.source === "EMAIL" ? "added from an email you approved" : "added by hand"}
-        </p>
-      </header>
+      <Card>
+        <CardContent className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-3xl font-semibold tracking-tight">{a.company}</h1>
+            <StatusBadge status={a.status} />
+          </div>
+          <p className="text-lg text-muted-foreground">
+            {a.roleTitle}
+            {a.jobRef && ` · Job ID ${a.jobRef}`}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {capitalize(STATUS_DESCRIPTION[a.status])} since {formatDay(a.statusSince)}
+            {a.appliedAt && ` · applied ${formatDay(a.appliedAt)}`} · {a.source === "EMAIL" ? "added from an email you approved" : "added by hand"}
+          </p>
+        </CardContent>
+      </Card>
 
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Timeline</h2>
-        <p className="text-sm text-muted-foreground">
-          Newest first. Each step is an email, what the agent concluded, the exact sentence it relied on, and your decision. A quote is checked
-          word for word against the email before anything is proposed.
-        </p>
-        {newestFirst.length === 0 ? (
-          <p className="mt-2 text-sm text-muted-foreground">No emails are linked to this application yet.</p>
-        ) : (
-          <ol className="mt-6 ml-2 border-l border-border">
-            {newestFirst.map((item, i) => (
-              <TimelineItem key={item.email.id} item={item} latest={i === 0} gmailAddress={user.gmailAddress} now={now} />
-            ))}
-          </ol>
-        )}
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold">Timeline</CardTitle>
+          <CardDescription>
+            Newest first. Each step is an email, what the agent concluded, the exact sentence it relied on, and your decision. A quote is
+            checked word for word against the email before anything is proposed.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {newestFirst.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No emails are linked to this application yet.</p>
+          ) : (
+            <ol className="mt-2 ml-2 border-l border-border">
+              {newestFirst.map((item, i) => (
+                <TimelineItem key={item.email.id} item={item} latest={i === 0} gmailAddress={user.gmailAddress} now={now} />
+              ))}
+            </ol>
+          )}
+        </CardContent>
+      </Card>
     </>
   );
 }
-
-const DOT: Partial<Record<ApplicationStatus, string>> = {
-  ASSESSMENT: "bg-amber-500",
-  INTERVIEW: "bg-blue-500",
-  OFFER: "bg-emerald-500",
-  REJECTED: "bg-red-500",
-};
 
 function TimelineItem({ item: t, latest, gmailAddress, now }: { item: DetailData["timeline"][number]; latest: boolean; gmailAddress: string | null; now: Date }) {
   const sender = t.email.fromName ? `${t.email.fromName} <${t.email.fromAddress}>` : t.email.fromAddress;
@@ -93,7 +92,7 @@ function TimelineItem({ item: t, latest, gmailAddress, now }: { item: DetailData
   return (
     <li className="relative pb-10 pl-6 last:pb-0">
       <span
-        className={cn("absolute top-1 -left-[7px] size-3.5 rounded-full ring-4 ring-background", (newStatus && DOT[newStatus]) || "bg-zinc-400 dark:bg-zinc-500")}
+        className={cn("absolute top-1 -left-[7px] size-3.5 rounded-full ring-4 ring-background", newStatus ? STATUS_DOT[newStatus] : "bg-zinc-300 dark:bg-zinc-600")}
         aria-hidden
       />
       <div className="flex flex-wrap items-center gap-2 text-sm">

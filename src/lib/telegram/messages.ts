@@ -2,7 +2,7 @@ import type { InlineKeyboardMarkup, LinkPreviewOptions } from "grammy/types";
 import type { AccountSummary } from "@/lib/account/manage";
 import type { AnalysisSummary } from "@/lib/agent/analyze";
 import { APP_NAME } from "@/lib/brand";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatUsd } from "@/lib/format";
 import type { RevokeResult } from "@/lib/gmail/oauth";
 import type { SyncSummary } from "@/lib/gmail/sync";
 import {
@@ -193,8 +193,7 @@ export const GMAIL_UNREACHABLE_TEXT = "I couldn't reach Gmail just now. Nothing 
 
 // ---------- AI budget (rules in lib/llm/budget-policy.ts) ----------
 
-/** Amounts under a cent keep four decimals, so a small spend doesn't read as $0.00. */
-const money = (usd: number) => `$${usd.toFixed(usd > 0 && usd < 0.01 ? 4 : 2)}`;
+const money = formatUsd;
 const budgetName = (scope: BudgetScope) => (scope === "user" ? "your monthly AI allowance" : "the shared monthly AI budget");
 const STILL_WORKS = "/status, /pending, approving cards and the dashboard still work.";
 

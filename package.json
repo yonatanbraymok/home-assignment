@@ -31,6 +31,7 @@
     "@prisma/client": "7.10.0",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
+    "framer-motion": "^14.0.0",
     "google-auth-library": "^11.1.0",
     "grammy": "^1.46.0",
     "html-to-text": "^10.0.1",

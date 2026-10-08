@@ -28,6 +28,7 @@ export function findSessionUser(userId: string) {
       gmailConnectedAt: true,
       gmailLastSyncAt: true,
       gmailSyncError: true,
+      demoAt: true,
       telegramUserId: true,
     },
   });
@@ -181,6 +182,37 @@ export async function applicationDetailFor(userId: string, applicationId: string
 }
 
 /** What a new user has done so far, for the dashboard's getting-started checklist. */
+/** The latest job emails and what became of each one: the overview's "Recent activity". */
+export async function recentActivityFor(userId: string, take = 6) {
+  const emails = await db.emailMessage.findMany({
+    where: { userId, state: "CLASSIFIED", category: { not: "NOT_JOB_RELATED" } },
+    orderBy: { receivedAt: "desc" },
+    take,
+    select: {
+      id: true,
+      subject: true,
+      receivedAt: true,
+      category: true,
+      applicationId: true,
+      application: { select: { company: true } },
+      proposals: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { state: true, toStatus: true, company: true, applicationId: true, expiresAt: true },
+      },
+    },
+  });
+  return emails.map(({ proposals, application, ...e }) => {
+    const p = proposals[0] ?? null;
+    return {
+      ...e,
+      company: application?.company ?? p?.company ?? null,
+      applicationId: e.applicationId ?? p?.applicationId ?? null,
+      proposal: p && { state: p.state, toStatus: p.toStatus, expiresAt: p.expiresAt },
+    };
+  });
+}
+
 export async function gettingStartedFor(userId: string) {
   const [user, applications, questions] = await Promise.all([
     db.user.findUnique({ where: { id: userId }, select: { gmailAddress: true, demoAt: true, mcpTokenHash: true } }),

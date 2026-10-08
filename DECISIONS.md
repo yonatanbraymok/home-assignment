@@ -227,3 +227,6 @@ a rejected card is a labelled mistake; with consent, add it to the classifier ev
 The budget flow. The brief describes one budget for a team: under \$50 a month for 5 people, each using it about 20 times a working day. Since this is a personal tool that anyone can join, I turned it into two caps: \$5 of AI per person and \$25 shared, with a lower level at 80% (fewer questions a day, a lighter model for emails) and a pause when its used up. It works and it's tested, but it feels forced:
 Its a lot of machinery for a limit that's far away. Real use is about 1% of a person's allowance, so the levels and notices will almost never fire.
 
+I am also not so confident in the initial sync experience.
+When first connecting, the user needs to approve all the past applications in order to sync them into the system. A user might encounter 10+ cards (not spammed) at the beginning.
+I thought about making the first sync silent, meaning the user would need to approve only future emails, and the agent states past ones as facts, but it didnt match Action with approval rule.

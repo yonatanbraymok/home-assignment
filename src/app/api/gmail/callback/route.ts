@@ -1,5 +1,6 @@
 import { gmail } from "@googleapis/gmail";
 import { encrypt, verifyToken } from "@/lib/crypto";
+import { resetDemo } from "@/lib/demo/demo";
 import { db } from "@/lib/db";
 import { appUrl } from "@/lib/env";
 import { GMAIL_SCOPE, createOAuthClient } from "@/lib/gmail/oauth";
@@ -42,12 +43,14 @@ export async function GET(req: Request) {
   if (!address) return result("error");
 
   const [user, owner] = await Promise.all([
-    db.user.findUnique({ where: { id: userId }, select: { gmailAddress: true, telegramChatId: true } }),
+    db.user.findUnique({ where: { id: userId }, select: { gmailAddress: true, telegramChatId: true, demoAt: true } }),
     db.user.findUnique({ where: { gmailAddress: address }, select: { id: true } }),
   ]);
   if (!user) return result("expired");
   if (owner && owner.id !== userId) return result("already-linked");
 
+  // Real email ends the demo: sample and real emails never mix.
+  if (user.demoAt) await resetDemo(userId);
   const switchedAccount = user.gmailAddress !== address;
   await db.user.update({
     where: { id: userId },
@@ -62,7 +65,7 @@ export async function GET(req: Request) {
     },
   });
 
-  await sendToUser(user.telegramChatId, gmailConnectedText(address)).catch((e) => console.error("connected notice failed:", e instanceof Error ? e.message : e));
+  await sendToUser(user.telegramChatId, gmailConnectedText(address, Boolean(user.demoAt))).catch((e) => console.error("connected notice failed:", e instanceof Error ? e.message : e));
 
   return result("connected");
 }

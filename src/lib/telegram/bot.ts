@@ -7,6 +7,7 @@ import { answerQuestion } from "@/lib/agent/chat";
 import { NOT_YET_READ } from "@/lib/agent/queue";
 import { signToken } from "@/lib/crypto";
 import { db } from "@/lib/db";
+import { addLiveDemoEmail, resetDemo, startDemo } from "@/lib/demo/demo";
 import { appUrl, requireEnv } from "@/lib/env";
 import { GmailAccessRevoked, syncMailbox } from "@/lib/gmail/sync";
 import { budgetStatus, spendByPurpose } from "@/lib/llm/budget";
@@ -24,6 +25,12 @@ import {
   CONFIRM_EXPIRED_TEXT,
   CONFIRM_NOT_OWNER_TEXT,
   DECISION_TOAST,
+  DEMO_ALREADY_TEXT,
+  DEMO_EMAIL_DATA,
+  DEMO_GMAIL_CONNECTED_TEXT,
+  DEMO_NO_MORE_TEXT,
+  DEMO_ONLY_TEXT,
+  DEMO_SYNC_TEXT,
   GMAIL_UNREACHABLE_TEXT,
   LATER_TOAST,
   NOTHING_STORED_TEXT,
@@ -36,10 +43,15 @@ import {
   SYNC_COOLDOWN_TEXT,
   TEXT_ONLY_TEXT,
   UNKNOWN_COMMAND_TEXT,
+  analysisText,
   connectReply,
   dashboardLinkReply,
   deleteConfirmText,
   deleteDoneText,
+  demoEmailReply,
+  demoIntroText,
+  demoReadText,
+  demoResetText,
   disconnectConfirmText,
   disconnectDoneText,
   helpText,
@@ -54,6 +66,9 @@ const CONNECT_LINK_TTL_SECONDS = 600;
 const SYNC_COOLDOWN_MS = 60_000;
 const ANALYZE_PER_SYNC = 10;
 const MAX_PENDING_RESENT = 10;
+// The demo reads its sample inbox inside the update; the webhook allows 55 s.
+const DEMO_READ_LIMIT = 20;
+const DEMO_READ_MS = 40_000;
 
 let bot: Bot | undefined;
 
@@ -89,6 +104,31 @@ function findUser(telegramId: number) {
     where: { telegramUserId: BigInt(telegramId) },
     select: { id: true, gmailAddress: true, gmailRefreshTokenEnc: true, gmailLastSyncAt: true, demoAt: true },
   });
+}
+
+const notYetRead = (userId: string) => db.emailMessage.count({ where: { userId, state: { in: [...NOT_YET_READ] } } });
+
+/** /demo and /start demo: load the sample inbox and read it, then the review summary follows. */
+async function runDemo(ctx: Context, userId: string, firstName: string) {
+  const started = await startDemo(userId, firstName);
+  if (started.kind === "gmail-connected") return ctx.reply(DEMO_GMAIL_CONNECTED_TEXT);
+  if (started.kind === "already") return ctx.reply(DEMO_ALREADY_TEXT);
+  await ctx.reply(demoIntroText(firstName, started));
+  await ctx.replyWithChatAction("typing");
+  const analysis = await analyzePendingEmails(userId, DEMO_READ_LIMIT, { deadline: Date.now() + DEMO_READ_MS });
+  // Every sample read: the summary with its Start button is the next message.
+  if (await finishBackfill(userId)) return;
+  await ctx.reply(demoReadText(analysis, await notYetRead(userId)));
+}
+
+/** /demo_email and its button: the next scripted email arrives now, and its card pops up. */
+async function sendDemoEmail(ctx: Context, userId: string, firstName: string) {
+  const added = await addLiveDemoEmail(userId, firstName);
+  if (added.kind === "not-demo") return ctx.reply(DEMO_ONLY_TEXT);
+  if (added.kind === "none-left") return ctx.reply(DEMO_NO_MORE_TEXT);
+  await ctx.replyWithChatAction("typing");
+  const analysis = await analyzePendingEmails(userId, DEMO_READ_LIMIT, { deadline: Date.now() + DEMO_READ_MS });
+  await ctx.reply(...demoEmailReply(added, analysis));
 }
 
 function registerHandlers(bot: Bot) {
@@ -145,6 +185,15 @@ function registerHandlers(bot: Bot) {
     if (next.kind === "open") await sendCard(next.proposalId);
   });
 
+  // "Simulate a new email" in the demo. The tapped button goes, so old ones don't pile up.
+  bot.callbackQuery(DEMO_EMAIL_DATA, async (ctx) => {
+    const user = await findUser(ctx.from.id);
+    if (!user) return answer(ctx, { text: NOT_REGISTERED_TEXT });
+    await answer(ctx, { text: "📨 A new email is on its way…" });
+    await ctx.editMessageReplyMarkup().catch(ignoreNotModified);
+    await sendDemoEmail(ctx, user.id, ctx.from.first_name);
+  });
+
   // Confirmation buttons for /disconnect and /delete_my_data. Editing the message without a
   // keyboard removes the buttons, so a confirmation can be used once.
   bot.callbackQuery(/^acct:/, async (ctx) => {
@@ -181,12 +230,31 @@ function registerHandlers(bot: Bot) {
       displayName: [from.first_name, from.last_name].filter(Boolean).join(" "),
     };
     const existing = await db.user.findUnique({ where: { telegramUserId }, select: { id: true, gmailAddress: true, demoAt: true } });
-    if (existing) {
-      await db.user.update({ where: { id: existing.id }, data: profile });
-    } else {
-      await db.user.create({ data: { telegramUserId, ...profile } });
-    }
+    const { id } = existing
+      ? await db.user.update({ where: { id: existing.id }, data: profile, select: { id: true } })
+      : await db.user.create({ data: { telegramUserId, ...profile }, select: { id: true } });
+    // t.me/<bot>?start=demo (the landing page's "Try it with sample emails") goes straight to the demo.
+    if (ctx.match === "demo" && !existing?.gmailAddress && !existing?.demoAt) return runDemo(ctx, id, from.first_name);
     await ctx.reply(welcomeText({ firstName: from.first_name, isNew: !existing, gmailAddress: existing?.gmailAddress ?? null, demo: Boolean(existing?.demoAt) }));
+  });
+
+  pm.command("demo", async (ctx) => {
+    const user = await findUser(ctx.from.id);
+    if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
+    await runDemo(ctx, user.id, ctx.from.first_name);
+  });
+
+  pm.command("demo_email", async (ctx) => {
+    const user = await findUser(ctx.from.id);
+    if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
+    await sendDemoEmail(ctx, user.id, ctx.from.first_name);
+  });
+
+  pm.command("demo_reset", async (ctx) => {
+    const user = await findUser(ctx.from.id);
+    if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
+    if (!user.demoAt) return ctx.reply(DEMO_ONLY_TEXT);
+    await ctx.reply(demoResetText(await resetDemo(user.id)));
   });
 
   pm.command("help", (ctx) => ctx.reply(helpText()));
@@ -196,12 +264,19 @@ function registerHandlers(bot: Bot) {
     if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
     const token = signToken("gmail-connect", user.id, CONNECT_LINK_TTL_SECONDS);
     const link = appUrl(`/api/gmail/connect?t=${token}`);
-    await ctx.reply(...connectReply(link, user.gmailAddress));
+    await ctx.reply(...connectReply(link, user.gmailAddress, Boolean(user.demoAt)));
   });
 
   pm.command("sync", async (ctx) => {
     const user = await findUser(ctx.from.id);
     if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
+    if (!user.gmailRefreshTokenEnc && user.demoAt) {
+      // No inbox to fetch in the demo; sample emails still waiting are read like real ones.
+      await ctx.replyWithChatAction("typing");
+      const analysis = await analyzePendingEmails(user.id, ANALYZE_PER_SYNC);
+      await ctx.reply(analysis.analyzed || analysis.budget ? analysisText(analysis, await notYetRead(user.id)) : DEMO_SYNC_TEXT);
+      return quietly("review summary", finishBackfill(user.id));
+    }
     if (!user.gmailRefreshTokenEnc) return ctx.reply(NOT_CONNECTED_TEXT);
     if (user.gmailLastSyncAt && Date.now() - user.gmailLastSyncAt.getTime() < SYNC_COOLDOWN_MS) {
       return ctx.reply(SYNC_COOLDOWN_TEXT);
@@ -217,8 +292,7 @@ function registerHandlers(bot: Bot) {
     }
     await ctx.replyWithChatAction("typing");
     const analysis = await analyzePendingEmails(user.id, ANALYZE_PER_SYNC);
-    const stillQueued = await db.emailMessage.count({ where: { userId: user.id, state: { in: [...NOT_YET_READ] } } });
-    await ctx.reply(syncReplyText(synced, analysis, stillQueued));
+    await ctx.reply(syncReplyText(synced, analysis, await notYetRead(user.id)));
     await quietly("review summary", finishBackfill(user.id));
     await quietly("budget notices", ensureBudgetNotices({ recipients: [user.id] }));
   });
@@ -278,7 +352,7 @@ function registerHandlers(bot: Bot) {
     const user = await findUser(ctx.from.id);
     if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
     // After /disconnect the tracker is still there, so questions about it keep working.
-    if (!user.gmailAddress && (await db.jobApplication.count({ where: { userId: user.id } })) === 0) return ctx.reply(NOT_CONNECTED_TEXT);
+    if (!user.gmailAddress && !user.demoAt && (await db.jobApplication.count({ where: { userId: user.id } })) === 0) return ctx.reply(NOT_CONNECTED_TEXT);
     await ctx.replyWithChatAction("typing");
     const result = await answerQuestion(user.id, ctx.message.text);
     await ctx.reply(result.text, { link_preview_options: { is_disabled: true } });

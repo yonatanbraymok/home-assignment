@@ -86,6 +86,8 @@ export function helpText(): string {
     "",
     'You can also ask me anything about your applications, like "which companies haven\'t replied?"',
     "",
+    "In the demo, /demo_email makes a new sample email arrive and /demo_reset removes the samples.",
+    "",
     "Commands",
     ...COMMANDS.map((c) => `/${c.command} – ${c.description}`),
   ].join("\n");
@@ -106,7 +108,7 @@ function linkReply(lines: (cta: string) => string[], button: string, link: strin
   return [lines("Tap the button below").join("\n"), { link_preview_options: preview, reply_markup: { inline_keyboard: [[{ text: button, url: link }]] } }];
 }
 
-export function connectReply(link: string, gmailAddress: string | null): LinkReply {
+export function connectReply(link: string, gmailAddress: string | null, demo = false): LinkReply {
   return linkReply(
     (cta) => [
       gmailAddress
@@ -114,6 +116,7 @@ export function connectReply(link: string, gmailAddress: string | null): LinkRep
         : `${cta} to connect your Gmail. It works for ${LINK_MINUTES} minutes.`,
       "",
       "Google will ask to let me read your email. I keep only job-related emails, and I can never send, delete or change anything.",
+      ...(demo ? ["", "Connecting ends the demo: I'll remove the sample emails first."] : []),
     ],
     "🔗 Connect Gmail",
     link,
@@ -132,11 +135,12 @@ export function dashboardLinkReply(link: string): LinkReply {
   );
 }
 
-export function gmailConnectedText(address: string): string {
+export function gmailConnectedText(address: string, endedDemo = false): string {
   return [
     `✅ Gmail connected: ${address}`,
     "",
     "I can only read: I can never send, delete or change anything.",
+    ...(endedDemo ? ["The demo is over: I removed its sample emails."] : []),
     "",
     "Next, send /sync. I'll read your job emails from the last 60 days, then show you what I found, one card at a time. After that I check your inbox every 5 minutes on my own.",
   ].join("\n");
@@ -323,6 +327,65 @@ export const LATER_TOAST: Record<DeferResult, string> = {
   "not-yours": "Only the owner of this application can decide this.",
   "not-found": "This card no longer exists.",
 };
+
+// ---------- The demo (/demo, lib/demo) ----------
+
+export const DEMO_EMAIL_DATA = "demo:email";
+
+const demoEmailButton = (text: string): InlineKeyboardMarkup => ({ inline_keyboard: [[{ text, callback_data: DEMO_EMAIL_DATA }]] });
+
+export function demoIntroText(firstName: string, inbox: { fetched: number; candidates: number }): string {
+  return [
+    `Hi ${firstName} 👋 Let's try me out on a sample inbox: ${inbox.fetched} fictional emails from the last five weeks, as if they were in your Gmail.`,
+    "",
+    `${inbox.candidates} of them look job-related, and I'm reading those now with the same AI I use on real email. This takes about half a minute…`,
+  ].join("\n");
+}
+
+/** After the demo's first read, when the review summary couldn't be sent yet. */
+export function demoReadText(s: AnalysisSummary, stillQueued: number): string {
+  if (s.budget || s.skippedNotConfigured || !stillQueued) return analysisText(s, stillQueued) || "I've read the sample emails. /demo_email makes a new one arrive.";
+  return `I've read ${plural(s.analyzed, "sample email")} so far. I'll read the other ${stillQueued} on my own within a few minutes and then show you what I found; /sync speeds it up.`;
+}
+
+/** The reply after a simulated new email, with the button for the next one. */
+export function demoEmailReply(sent: { number: number; total: number }, s: AnalysisSummary): [text: string, options: { reply_markup?: InlineKeyboardMarkup }] {
+  const which = `sample email ${sent.number} of ${sent.total}`;
+  const last = sent.number >= sent.total;
+  const text = s.budget
+    ? analysisText(s, 1)
+    : s.proposals
+      ? `📨 That card came from ${which}, the moment it arrived, just as with real email. Approve or reject it above.`
+      : s.failed || s.unverified
+        ? `I couldn't read ${which} just now. I'll try again on my own in a few minutes.`
+        : `I read ${which}: it didn't need a change, so there's no card.`;
+  if (last) return [`${text}\n\nThat was the last sample. /demo_reset removes them all, and /connect brings in your real Gmail.`, {}];
+  return [text, { reply_markup: demoEmailButton("📨 Another sample email") }];
+}
+
+/** The review's last message, for an account in the demo: the next step is a live email. */
+export function reviewDoneReply(demo: boolean): [text: string, options: { reply_markup?: InlineKeyboardMarkup }] {
+  if (!demo) return [REVIEW_DONE_TEXT, {}];
+  return [
+    "✅ That's everything from your sample inbox. From now on, a card arrives as soon as a new job email does. In the demo, you decide when that happens:",
+    { reply_markup: demoEmailButton("📨 Simulate a new email") },
+  ];
+}
+
+export function demoResetText(r: { emails: number; applications: number }): string {
+  return `✅ Demo removed: ${plural(r.emails, "sample email")} and ${plural(r.applications, "application")}, with their cards. /demo starts over, and /connect brings in your real Gmail.`;
+}
+
+export const DEMO_GMAIL_CONNECTED_TEXT =
+  "Your Gmail is connected, so I won't load the demo: sample emails would mix with your real ones. Everything the demo shows happens with your real email too.";
+
+export const DEMO_ALREADY_TEXT = "You're already in the demo. /demo_email makes a new sample email arrive, /pending shows cards waiting for you, and /demo_reset removes the samples.";
+
+export const DEMO_ONLY_TEXT = "That's for the demo, which isn't running. /demo starts it.";
+
+export const DEMO_NO_MORE_TEXT = "That was the last sample email. /demo_reset removes them all, and /connect brings in your real Gmail.";
+
+export const DEMO_SYNC_TEXT = "There's no real inbox in the demo, so nothing new to fetch. /demo_email makes a new sample email arrive.";
 
 // ---------- /status ----------
 

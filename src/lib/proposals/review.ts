@@ -1,8 +1,8 @@
 import { InlineKeyboard } from "grammy";
 import { db } from "@/lib/db";
 import { NOT_YET_READ } from "@/lib/agent/queue";
-import { REVIEW_DONE_TEXT, reviewReadyText } from "@/lib/telegram/messages";
-import { sendToUser, telegramApi } from "@/lib/telegram/notify";
+import { reviewDoneReply, reviewReadyText } from "@/lib/telegram/messages";
+import { telegramApi } from "@/lib/telegram/notify";
 import { quietly, sendCard } from "./cards-io";
 import { START_REVIEW_DATA, summarize, type ReviewSummary } from "./past-emails";
 import { PROPOSAL_TTL_MS, reviewQueueWhere } from "./rules";
@@ -83,11 +83,15 @@ export async function showNextReviewCard(userId: string): Promise<NextCard> {
 export async function continueReview(proposalId: string): Promise<NextCard | null> {
   const p = await db.statusProposal.findUnique({
     where: { id: proposalId },
-    select: { userId: true, heldForReview: true, user: { select: { telegramChatId: true } } },
+    select: { userId: true, heldForReview: true, user: { select: { telegramChatId: true, demoAt: true } } },
   });
   if (!p?.heldForReview) return null;
   const next = await showNextReviewCard(p.userId);
-  if (next.kind === "done") await quietly("send review done", sendToUser(p.user.telegramChatId, REVIEW_DONE_TEXT));
+  if (next.kind === "done") {
+    // In the demo, the last message offers the next step: a new email arriving.
+    const [text, options] = reviewDoneReply(Boolean(p.user.demoAt));
+    await quietly("send review done", telegramApi().sendMessage(Number(p.user.telegramChatId), text, { ...options, link_preview_options: { is_disabled: true } }));
+  }
   return next;
 }
 

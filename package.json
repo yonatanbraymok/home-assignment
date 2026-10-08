@@ -20,7 +20,8 @@
     "eval:review": "tsx --env-file=.env.local evals/review.ts",
     "eval:dashboard": "tsx --env-file=.env.local evals/dashboard.ts",
     "eval:budget": "tsx --env-file=.env.local evals/budget.ts",
-    "eval:mcp": "tsx --env-file=.env.local evals/mcp.ts"
+    "eval:mcp": "tsx --env-file=.env.local evals/mcp.ts",
+    "eval:demo": "tsx --env-file=.env.local evals/demo.ts"
   },
   "dependencies": {
     "@google/genai": "^2.27.0",

@@ -1,5 +1,7 @@
 import { analyzePendingEmails, type AnalysisSummary } from "@/lib/agent/analyze";
+import { CLAIMABLE } from "@/lib/agent/queue";
 import { safeEqual } from "@/lib/crypto";
+import { db } from "@/lib/db";
 import { requireEnv } from "@/lib/env";
 import { syncAllMailboxes } from "@/lib/gmail/sync";
 import { quietly } from "@/lib/proposals/cards-io";
@@ -25,8 +27,14 @@ export async function POST(req: Request) {
   const expired = await expireOverdueProposals();
   const synced = await syncAllMailboxes(SYNC_BUDGET_MS);
 
+  // Demo accounts have no mailbox to sync, but their sample emails are read like real ones.
+  const demo = await db.user.findMany({
+    where: { demoAt: { not: null }, gmailRefreshTokenEnc: null, emails: { some: { state: { in: [...CLAIMABLE] } } } },
+    select: { id: true },
+  });
+
   const analyzed: ({ userId: string } & (AnalysisSummary | { error: string }))[] = [];
-  for (const { userId } of synced) {
+  for (const userId of [...synced.map((s) => s.userId), ...demo.map((u) => u.id)]) {
     if (Date.now() - startedAt > TOTAL_BUDGET_MS) break;
     try {
       analyzed.push({ userId, ...(await analyzePendingEmails(userId, ANALYZE_PER_USER, { deadline: startedAt + TOTAL_BUDGET_MS })) });

@@ -132,7 +132,7 @@ export default function Home(props: PageProps<"/">) {
             </div>
             <p className="mt-8 max-w-lg text-sm text-paper/60">
               <span className="font-medium text-paper">Open your dashboard:</span> send <code className="rounded bg-white/10 px-1.5 py-0.5">/dashboard</code> to{" "}
-              <a className="font-medium text-lime underline-offset-4 hover:underline" href={botUrl()}>
+              <a className="font-medium text-highlight underline-offset-4 hover:underline" href={botUrl()}>
                 @{bot}
               </a>{" "}
               and open the link it sends you. Each link works once, within 10 minutes.
@@ -148,16 +148,16 @@ export default function Home(props: PageProps<"/">) {
 
 function Pill({ icon, children, className }: { icon: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-2 rounded-full bg-lime px-3.5 py-1.5 text-xs font-medium tracking-wide text-ink [&>svg]:size-3.5", className)}>
+    <span className={cn("inline-flex items-center gap-2 rounded-full bg-highlight px-3.5 py-1.5 text-xs font-medium tracking-wide text-ink [&>svg]:size-3.5", className)}>
       {icon}
       {children}
     </span>
   );
 }
 
-/** A lime marker behind a word, upright. */
+/** A light-blue marker behind a word, upright. */
 function Highlight({ children }: { children: ReactNode }) {
-  return <mark className="rounded-[0.18em] bg-lime px-[0.14em] text-ink [box-decoration-break:clone]">{children}</mark>;
+  return <mark className="rounded-[0.18em] bg-highlight px-[0.14em] text-ink [box-decoration-break:clone]">{children}</mark>;
 }
 
 async function SignInState({ searchParams }: Pick<PageProps<"/">, "searchParams">) {

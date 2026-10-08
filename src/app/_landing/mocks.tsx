@@ -36,14 +36,14 @@ export function MockConnectCard() {
   return (
     <div role="img" aria-label="Connect Gmail: read-only access" className="w-full max-w-sm rounded-2xl border border-ink/10 bg-white p-5 text-ink">
       <div className="flex items-center gap-3">
-        <div className="grid size-10 place-items-center rounded-full bg-lilac">
+        <div className="grid size-10 place-items-center rounded-full bg-tint">
           <Mail className="size-5 text-brand" />
         </div>
         <div>
           <p className="font-heading font-semibold">Connect Gmail</p>
           <p className="text-xs text-ink/55">Read-only access</p>
         </div>
-        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-lime px-2.5 py-0.5 text-xs font-medium">
+        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-highlight px-2.5 py-0.5 text-xs font-medium">
           <Lock className="size-3" />
           Secure
         </span>
@@ -70,7 +70,7 @@ export function MockEmail() {
           <p className="truncate text-sm font-medium">Google Recruiting</p>
           <p className="text-xs text-ink/55">to me · 9:41</p>
         </div>
-        <span className="ml-auto rounded-full bg-lilac px-2.5 py-0.5 text-xs font-medium text-brand-dark">Inbox</span>
+        <span className="ml-auto rounded-full bg-tint px-2.5 py-0.5 text-xs font-medium text-brand-dark">Inbox</span>
       </div>
       <div className="px-4 py-3.5">
         <p className="text-xs text-ink/55">Subject</p>
@@ -89,7 +89,7 @@ export function MockTelegramMessage() {
         <div className="min-w-0 rounded-2xl rounded-bl-sm border border-ink/10 bg-white px-3.5 py-2.5">
           <p className="text-xs font-semibold text-brand">{APP_NAME}</p>
           <p className="mt-1 text-sm">
-            Google requested an interview. Move status to <span className="rounded bg-lime px-1 font-semibold">INTERVIEW</span>?
+            Google requested an interview. Move status to <span className="rounded bg-highlight px-1 font-semibold">INTERVIEW</span>?
           </p>
           <p className="mt-2 border-l-2 border-brand/60 pl-2 text-xs text-ink/55">“We&apos;d love to chat!”</p>
           <p className="mt-1 text-right text-[10px] text-ink/40">9:41</p>

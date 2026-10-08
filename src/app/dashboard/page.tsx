@@ -108,7 +108,7 @@ function BudgetMonitor({ budget, forecastUsd }: { budget: OverviewData["budget"]
       ? { text: `Paused until ${until}${shared}`, className: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300", bar: "[&_[data-slot=progress-indicator]]:bg-rose-500" }
       : budget.level === "low"
         ? { text: `Limited until ${until}${shared}`, className: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300", bar: "[&_[data-slot=progress-indicator]]:bg-amber-500" }
-        : { text: "On track", className: "bg-lime text-ink", bar: "" };
+        : { text: "On track", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300", bar: "" };
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">

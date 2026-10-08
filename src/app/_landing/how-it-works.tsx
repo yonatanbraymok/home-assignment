@@ -39,7 +39,7 @@ export function HowItWorks() {
             transition={{ type: "spring", stiffness: 170, damping: 22, delay: i * 0.12 }}
           >
             <div className="flex items-start gap-3">
-              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-lime font-heading text-sm font-bold text-ink">{i + 1}</span>
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-highlight font-heading text-sm font-bold text-ink">{i + 1}</span>
               <div>
                 <h3 className="text-xl font-semibold text-white">{step.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-white/60">{step.body}</p>

@@ -12,15 +12,16 @@
   --font-sans: var(--font-dm-sans); /* set by next/font in layout.tsx */
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-grotesk);
-  /* The palette by name, for the few places that need it outright (landing page, badges). */
-  --color-paper: #f6f4ff;
-  --color-ink: #17153b;
-  --color-brand: #5b3df5;
-  --color-brand-dark: #4a2fd6;
-  --color-lime: #d9f36b;
-  --color-lilac: #ece8ff;
-  --color-night: #14123a;
-  --color-night-card: #221f55;
+  /* The palette by name, for the few places that need it outright (landing page, badges).
+     Zinc base, one blue for actions (#0085CC, darker on hover), a light blue to highlight. */
+  --color-paper: #ffffff;
+  --color-ink: #18181b;
+  --color-brand: #0085cc;
+  --color-brand-dark: #0073b3;
+  --color-highlight: #cdeafa;
+  --color-tint: #e6f3fb;
+  --color-night: #18181b;
+  --color-night-card: #27272a;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -60,69 +61,70 @@
 }
 
 :root {
-  /* Lavender paper, deep ink, one violet accent; lime only to highlight. */
-  --background: #f6f4ff;
-  --foreground: #17153b;
-  --card: #ffffff;
-  --card-foreground: #17153b;
+  /* Zinc base: white page, zinc-50 cards, zinc-200 borders, zinc-900 text, zinc-500 secondary
+     text. The one action colour is #0085CC (hover #0073B3). */
+  --background: #ffffff;
+  --foreground: #18181b;
+  --card: #fafafa;
+  --card-foreground: #18181b;
   --popover: #ffffff;
-  --popover-foreground: #17153b;
-  --primary: #5b3df5;
+  --popover-foreground: #18181b;
+  --primary: #0085cc;
   --primary-foreground: #ffffff;
-  --secondary: #ece8ff;
-  --secondary-foreground: #17153b;
-  --muted: #efecfb;
-  --muted-foreground: #615f80;
-  --accent: #ece8ff;
-  --accent-foreground: #17153b;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
   --destructive: #e11d48;
-  --border: #e4e1f3;
-  --input: #dcd8ee;
-  --ring: #5b3df5;
-  --chart-1: #5b3df5;
-  --chart-2: #d9f36b;
-  --chart-3: #9d8cfa;
-  --chart-4: #615f80;
-  --chart-5: #17153b;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #0085cc;
+  --chart-1: #0085cc;
+  --chart-2: #71717a;
+  --chart-3: #a1a1aa;
+  --chart-4: #3f3f46;
+  --chart-5: #18181b;
   --radius: 0.875rem;
-  --sidebar: #f6f4ff;
-  --sidebar-foreground: #17153b;
-  --sidebar-primary: #5b3df5;
+  --sidebar: #fafafa;
+  --sidebar-foreground: #18181b;
+  --sidebar-primary: #0085cc;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #ece8ff;
-  --sidebar-accent-foreground: #17153b;
-  --sidebar-border: #e4e1f3;
-  --sidebar-ring: #5b3df5;
+  --sidebar-accent: #f4f4f5;
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: #e4e4e7;
+  --sidebar-ring: #0085cc;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0f0d2b;
-    --foreground: #f6f4ff;
-    --card: #1b1846;
-    --card-foreground: #f6f4ff;
-    --popover: #1b1846;
-    --popover-foreground: #f6f4ff;
-    --primary: #7b63ff;
+    --background: #09090b;
+    --foreground: #fafafa;
+    --card: #18181b;
+    --card-foreground: #fafafa;
+    --popover: #18181b;
+    --popover-foreground: #fafafa;
+    --primary: #0085cc;
     --primary-foreground: #ffffff;
-    --secondary: #2a2660;
-    --secondary-foreground: #f6f4ff;
-    --muted: #23204f;
-    --muted-foreground: #a7a3cc;
-    --accent: #2a2660;
-    --accent-foreground: #f6f4ff;
+    --secondary: #27272a;
+    --secondary-foreground: #fafafa;
+    --muted: #27272a;
+    --muted-foreground: #a1a1aa;
+    --accent: #27272a;
+    --accent-foreground: #fafafa;
     --destructive: #fb7185;
-    --border: #2c2861;
-    --input: #36326f;
-    --ring: #7b63ff;
-    --sidebar: #1b1846;
-    --sidebar-foreground: #f6f4ff;
-    --sidebar-primary: #7b63ff;
+    --border: #27272a;
+    --input: #3f3f46;
+    --ring: #38a9e6;
+    --sidebar: #18181b;
+    --sidebar-foreground: #fafafa;
+    --sidebar-primary: #0085cc;
     --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: #2a2660;
-    --sidebar-accent-foreground: #f6f4ff;
-    --sidebar-border: #2c2861;
-    --sidebar-ring: #7b63ff;
+    --sidebar-accent: #27272a;
+    --sidebar-accent-foreground: #fafafa;
+    --sidebar-border: #27272a;
+    --sidebar-ring: #38a9e6;
   }
 }
 
@@ -143,7 +145,7 @@
     letter-spacing: -0.02em;
   }
   ::selection {
-    background: var(--color-lime);
+    background: var(--color-highlight);
     color: var(--color-ink);
   }
   @media (prefers-reduced-motion: no-preference) {
@@ -153,7 +155,7 @@
   }
 }
 
-/* The landing page's dark section: a faint grid on night blue. */
+/* The landing page's dark section: a faint grid on zinc-900. */
 .grid-bg {
   background-color: var(--color-night);
   background-image:

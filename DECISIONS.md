@@ -213,8 +213,8 @@ The model evals check structured fields and facts, not wording, and are run more
 
 ### 12.1 An approved action's external call fails halfway. What happens, and what does the user see?
 
-The action's external call is actually a PostgreSQL transacation.
-if anything fails partway for any reason, the entire transaction rolls back compeletely, no half applied states. The card is marked as dailed, and the user gets a Couldnt apply error message, then he can retry or reject.
+The action's external call is actually a PostgreSQL transcation.
+if anything fails partway for any reason, the entire transaction rolls back compeletely, no half applied states. The card is marked as failed, and the user gets a Couldnt apply error message, then he can retry or reject.
 
 ### 12.2 Live for a month: how would I find out it's giving wrong answers before someone relies on them?
 

@@ -138,49 +138,15 @@ Typical use is about 10% of the budget. Only every extreme at once could go over
 3. Every query is limited to the token's owner. Someone else's application id gets the same answer as a missing one.
 4. The token is shown once, stored only as a hash, and can be replaced or revoked at once. Every call is logged and limited to 120 an hour.
 
-## 9. Build log: what I did in each step
-
-| Step | What I did | Key decision or finding |
-|---|---|---|
-| 0. Plan | Read the brief, picked the problem, planned the architecture, schema and approval state machine. | Scheduled the sync from Supabase, because Vercel's free cron is daily. Google's "Testing" mode expires Gmail access after 7 days, so the app must be published. |
-| 1. Scaffold | Next.js, Supabase, Prisma schema, health check. | "One pending card per application" is enforced by the database, not only by code. |
-| 2. Telegram | The bot, `/start` and `/help`, the webhook with its secret check. | Failed updates are acknowledged, so Telegram doesn't resend them. Groups are ignored. |
-| 3. Gmail sync | Read-only OAuth, encrypted tokens, `/connect`, `/sync`, the free prefilter. | Mail that isn't job-related keeps only its sender and subject. |
-| 4. Classifier and approval | Gemini classification, the verbatim quote check, matching, cards with Approve, Reject, Retry and expiry. | Approving is one transaction with a check that nothing changed meanwhile, so double taps and stale cards can't corrupt data. |
-| 5. Hardening | Job IDs and "which application?", the chat with read-only tools, re-application rules, data rights, the first-sync review, the monthly budget. | Each was driven by a real failure, most found by the user or by evals (§10). |
-| 6. Dashboard | Sign-in through the bot, the pipeline, a timeline with the evidence, settings. | Telegram is the identity: no passwords. |
-| 7. MCP | The two tools, tokens, and the write-blocking client. | Expose the agent's reasoning, not the database (the user redirected the first plan). |
-| 8. Deploy | Vercel, the webhook, `pg_cron`, the Google app published. Verified live: a test email became a card in about 2 minutes. | One database for development and production. |
-| 9. Polish for reviewers | `/demo`, a rewrite of every bot message, the landing page and dashboard design, the dashboard chat, status fixes by hand, the "Continue as" sign-in. | Testers need a path that works without exposing their inbox. |
-| 10. Evals | Ten eval suites (§11), including one that drives the real bot end to end. | They found real bugs throughout. |
-
 ## 10. Where AI helped, and where it was wrong
 
 I used Claude Code as a pair programmer for planning and code.
 
 **Where it helped:**
-- **Package versions:** it checked the npm registry first and found that `prisma@latest` was a release candidate while `@prisma/client@latest` was 7.10. A plain install would have mixed versions; everything is pinned to 7.10.0.
 - **Gmail access would have expired:** apps in Google's "Testing" mode lose Gmail access after 7 days, which would have broken the 10-day review window. Publishing the app became a deploy step.
 - **The free cron limit:** Vercel's free cron runs once a day, so the sync is scheduled by Supabase instead.
 - **The Telegram library:** it read grammY's webhook source and found that it skips the secret check when no secret is set, and that errors make Telegram resend updates. Both are handled in our route.
 - **Screenshots:** headless-browser screenshots of every page caught a wrong date that all the tests had passed.
-
-**Where it was wrong or misleading (and how it was caught):**
-
-| What went wrong | Caught by | Fix |
-|---|---|---|
-| Delivered one card per email at once; a real first sync sent a wall of cards. | The user's first sync | Past emails are reviewed one card at a time after a summary (A10). |
-| Built the "Open email" link in a format Gmail answers with a 404, and never opened one. | The user | A link format verified on a real email, with a unit test. |
-| Matched a new "application received" email to an old *rejected* application and offered "Rejected → Applied". | The user's own test | A confirmation can't move an application; a closed one reopens only by choice (A9). |
-| First proposed MCP as read-only database queries: that exposes the data, not the agent. | The user | `generate_prep_brief`: the agent's grounded reasoning as a tool. |
-| A chat answer quoted an email subject that doesn't exist. | `eval:chat` | Quoted text must appear in what the tools returned, or it's removed. |
-| Two analysis runs at once classified the same email twice and sent two cards. | A stress test | Each email is claimed atomically before the model call. |
-| First budget design said "stop at 100%", which can never fire. | An AI design review | "Used up" means one more whole question doesn't fit. |
-| A used sign-in link could be reused by appending text to it. | AI code reviewers | Tokens must have exactly two parts; tested. |
-| Said Supabase's row-level security didn't matter; the public API could actually read and write every table. | Checking table permissions on the live database | Row-level security on and public access revoked, in a migration. |
-| Plain forwarded emails were cut down to nothing before the model read them, so a forwarded interview looked empty. | The user's test | The forwarded message is kept when nothing is written above it. |
-| The sign-in confirmation's same-site check refused real browsers (they send `Origin: null` under the page's referrer policy). | The user, on a phone | A same-origin referrer policy, plus the browser's own `Sec-Fetch-Site` header. |
-| A 5-second database transaction limit failed approvals on a slow connection. | `eval:approval`, once in three runs | A 15-second limit. |
 
 ## 11. Evals
 

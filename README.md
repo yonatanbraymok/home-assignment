@@ -15,7 +15,7 @@ No Gmail needed: the demo loads a sample inbox into your own account and the rea
 3. Tap **▶️ Start review**. Each card shows the change, why, the sentence from the email it relies on, the sender, the date and how confident the agent is. Tap **✅ Approve**, **❌ Reject** or **⏭ Later**.
 4. After the last card, tap **📨 Simulate a new email**: an email "arrives" and its card pops up, as it would from Gmail. Five scripted emails cover an interview, a job-ID match between two roles at one company, a rejection, a *"Which application is this?"* and an offer.
 5. Ask anything in plain words: *"which applications haven't replied?"*, *"what happened with Lumen Health?"*. Answers come from your tracker and say where they came from.
-6. Send **/dashboard** for a one-time sign-in link to the website: the pipeline, each application's timeline with the evidence, and the AI budget.
+6. Send **/dashboard** for a one-time sign-in link to the website: the pipeline, each application's timeline with the evidence, the AI budget, and **Ask the agent**, the same agent and the same conversation as in Telegram.
 7. Optional, MCP: on the dashboard's **Developers** page, create a token and connect Claude Code, Cursor or the MCP Inspector. `generate_prep_brief` on Northwind Robotics, after its interview email, returns a grounded interview brief.
 8. **/demo_reset** removes the samples. To use your real inbox, send **/connect** (read-only Gmail access). Google shows *"Google hasn't verified this app"*: the app is published but unverified, so choose **Advanced → Go to Job Hunt Tracker**.
 
@@ -24,7 +24,7 @@ No Gmail needed: the demo loads a sample inbox into your own account and the rea
 - **The action:** creating or updating an application in your tracker (a status change, a new application, a job ID saved).
 - **Who approves:** only the Telegram account that owns the tracker, by tapping **Approve** on that specific card in its private chat with the bot. As a tester, that's you, for your own tracker. One card is one change; there is no "approve all".
 - **What's refused:** someone else's tap, a card older than 7 days, and a card whose application changed after it was made. Group chats are ignored.
-- **What can't approve at all:** the website and other agents (MCP) can read, but never change anything. Only a tap in Telegram does.
+- **What can't approve at all:** the website (including its chat) and other agents (MCP) can read, but never change anything. Only a tap in Telegram does.
 
 ## What it does
 
@@ -33,8 +33,8 @@ No Gmail needed: the demo loads a sample inbox into your own account and the rea
 - **Checks the model in code:** the quoted sentence must be in the email word for word; the job ID too; the email is matched to an application by job ID, then company and role; confidence is capped when the match is weak. When several applications fit, the card asks which one.
 - **Proposes in Telegram** and applies a change only on the owner's tap, in one database transaction.
 - **First sync:** 60 days of past email become one summary, then one card at a time.
-- **Answers questions** in Telegram from the tracker, through read-only tools. It says so when the data can't answer.
-- **Dashboard:** the pipeline, a timeline per application with the evidence behind every status, and the budget. Read-only.
+- **Answers questions** in Telegram and in the dashboard's chat, from the tracker, through read-only tools. It says so when the data can't answer. Both places share one conversation.
+- **Dashboard:** the pipeline, a timeline per application with the evidence behind every status, the budget, and the chat. It can't approve or change anything.
 - **MCP:** other agents can list applications and ask for a grounded interview or assessment brief. Read-only, scoped to the token's owner.
 - **Monthly budget:** $5 of AI per person and $25 shared, checked before every model call, with Telegram notices at 80% and when it's used up.
 
@@ -50,7 +50,9 @@ flowchart LR
   card -- "owner taps Approve" --> tx[("One Postgres transaction:<br/>the tracker changes")]
   student(("Student")) <--> bot["Telegram bot<br/>(webhook)"]
   bot --> tools["Read-only tools"]
-  dashboard["Next.js dashboard<br/>(read-only)"] --> db[("Supabase Postgres")]
+  student <--> dashboard["Next.js dashboard<br/>(chat; read-only)"]
+  dashboard --> tools
+  dashboard --> db[("Supabase Postgres")]
   tools --> db
   agents(("Other agents")) -- "MCP token" --> mcp["/api/mcp<br/>(read-only)"]
   mcp --> db
@@ -62,7 +64,7 @@ One Next.js app on Vercel hosts the webhook, the cron endpoint, the MCP endpoint
 | Folder | What's in it |
 |---|---|
 | `src/app` | Pages (landing, dashboard, legal) and API routes (`api/telegram/webhook`, `api/cron/sync`, `api/mcp`, `api/gmail/*`, `api/auth/login`, `api/health`) |
-| `src/lib/agent` | Classification, quote and job-ID checks, matching, the chat |
+| `src/lib/agent` | Classification, quote and job-ID checks, matching, the chat (used by the bot and the dashboard) |
 | `src/lib/proposals` | Proposal rules, cards, approval, the past-email review |
 | `src/lib/gmail`, `src/lib/telegram` | Sync and prefilter; the bot and every message it sends |
 | `src/lib/llm` | The Gemini client, prices, the budget |
@@ -146,7 +148,7 @@ Names and formats are also in [`.env.example`](.env.example). Never commit real 
 ## Tests and evals
 
 ```bash
-npm test                 # 97 unit tests, no network
+npm test                 # 98 unit tests, no network
 npm run evals            # the 5 evals that make no model calls
 npm run evals -- --all   # all 10, including the 5 that call the model (about $0.05)
 ```

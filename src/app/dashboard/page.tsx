@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { ArrowUpRight, CircleCheck, Circle, Send, TriangleAlert } from "lucide-react";
-import type { ApplicationStatus, EmailCategory, ProposalState } from "@/generated/prisma/enums";
-import { STATUS_DOT } from "@/components/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,14 +11,13 @@ import { botUrl } from "@/lib/env";
 import { formatDateTime, formatDay, formatUsd } from "@/lib/format";
 import { emailLink } from "@/lib/gmail/links";
 import { resetDateText } from "@/lib/llm/budget-policy";
-import { STATUS_LABEL } from "@/lib/proposals/rules";
 import { cn } from "@/lib/utils";
+import { AgentChat } from "./agent-chat";
 import { ApplicationsCard, type ApplicationRow } from "./applications-table";
-import { CATEGORY_LABEL } from "./labels";
 import { WaitingBadge, describeChange } from "./proposal-badges";
 
 // The overview, as a bento grid of cards: budget and totals across the top, the pipeline on the
-// left, and on the right what waits for the owner and what happened lately. Read-only: approving
+// left, and on the right what waits for the owner and a chat with the agent. Read-only: approving
 // and rejecting stay in Telegram, so there are no buttons for them here.
 export default function DashboardPage() {
   return (
@@ -53,7 +50,7 @@ async function Overview() {
       <GmailNotice user={user} demo={gettingStarted.demo} />
 
       {/* Phones get one column in reading order; from lg the pipeline spans two columns and the
-          right column stacks what waits for you above the activity card, which takes the rest. */}
+          right column stacks what waits for you above the chat with the agent, which takes the rest. */}
       <div className="grid gap-4 lg:grid-cols-3 lg:grid-rows-[auto_auto_1fr]">
         <SummaryCard data={data} className="lg:col-span-3" />
         <div className="flex flex-col gap-4 lg:col-start-3 lg:row-start-2">
@@ -61,7 +58,10 @@ async function Overview() {
           <WaitingCard waiting={data.waiting} />
         </div>
         <ApplicationsCard rows={rows} className="lg:col-span-2 lg:col-start-1 lg:row-span-2 lg:row-start-2" />
-        <ActivityCard activity={data.activity} className="lg:col-start-3 lg:row-start-3" />
+        <AgentChat
+          initial={data.chat.map((t) => ({ ...t, at: t.at.toISOString() }))}
+          className="lg:col-start-3 lg:row-start-3"
+        />
       </div>
     </div>
   );
@@ -139,14 +139,14 @@ function GettingStarted({ steps }: { steps: OverviewData["gettingStarted"] }) {
   const items = [
     { done: steps.gmailConnected, label: "Connect Gmail", hint: "Send /connect to the bot (or /demo to use sample emails)." },
     { done: steps.approvedSomething, label: "Approve your first card", hint: "Cards arrive in Telegram; nothing changes until you tap Approve." },
-    { done: steps.askedQuestion, label: "Ask the bot a question", hint: "For example: \"Which applications are waiting for a reply?\"" },
+    { done: steps.askedQuestion, label: "Ask the agent a question", hint: "Below, or in Telegram. For example: \"Which applications are waiting for a reply?\"" },
   ];
   if (items.every((i) => i.done)) return null;
   return (
     <Card>
       <CardHeader>
         <CardTitle>Getting started</CardTitle>
-        <CardDescription>Three steps, all in Telegram. This card goes once they&apos;re done.</CardDescription>
+        <CardDescription>Three steps. This card goes once they&apos;re done.</CardDescription>
       </CardHeader>
       <CardContent>
         <ol className="flex flex-col gap-2.5">
@@ -220,77 +220,6 @@ function WaitingCard({ waiting }: { waiting: OverviewData["waiting"] }) {
           <TelegramButton variant="outline" />
         </CardFooter>
       )}
-    </Card>
-  );
-}
-
-const CATEGORY_STATUS: Partial<Record<EmailCategory, ApplicationStatus>> = {
-  APPLICATION_RECEIVED: "APPLIED",
-  ASSESSMENT_INVITE: "ASSESSMENT",
-  INTERVIEW_INVITE: "INTERVIEW",
-  OFFER: "OFFER",
-  REJECTION: "REJECTED",
-};
-
-function outcome(p: OverviewData["activity"][number]["proposal"]): string {
-  if (!p) return "No change needed";
-  const outcomes: Record<ProposalState, string> = {
-    PENDING: p.expiresAt ? "Waiting for your approval" : "In your review of past emails",
-    EXECUTED: `Approved: ${STATUS_LABEL[p.toStatus]}`,
-    REJECTED: "You rejected the change",
-    EXPIRED: "Expired without a decision",
-    SUPERSEDED: "Replaced by a newer email",
-    STALE: "Not applied: the application had changed",
-    FAILED: "Couldn't be applied",
-  };
-  return outcomes[p.state];
-}
-
-function ActivityCard({ activity, className }: { activity: OverviewData["activity"]; className?: string }) {
-  return (
-    <Card className={className}>
-      <CardHeader>
-        <CardTitle>Recent activity</CardTitle>
-        <CardDescription>The latest job emails and what became of each one.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {activity.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing yet. Job emails show up here as soon as the agent reads them.</p>
-        ) : (
-          <ol className="flex flex-col gap-4">
-            {activity.map((a) => {
-              const status = a.category ? CATEGORY_STATUS[a.category] : undefined;
-              const body = (
-                <>
-                  <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", status ? STATUS_DOT[status] : "bg-zinc-300 dark:bg-zinc-600")} aria-hidden />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-sm font-medium">{a.company ?? "Unknown company"}</span>
-                      <time dateTime={a.receivedAt.toISOString()} className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                        {formatDateTime(a.receivedAt)}
-                      </time>
-                    </span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {a.category ? CATEGORY_LABEL[a.category] : "Job email"} · {outcome(a.proposal)}
-                    </span>
-                  </span>
-                </>
-              );
-              return (
-                <li key={a.id}>
-                  {a.applicationId ? (
-                    <Link href={`/dashboard/applications/${a.applicationId}`} className="-mx-2 flex gap-3 rounded-md px-2 py-1 hover:bg-muted/60">
-                      {body}
-                    </Link>
-                  ) : (
-                    <div className="flex gap-3 py-1">{body}</div>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </CardContent>
     </Card>
   );
 }

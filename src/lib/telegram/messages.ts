@@ -1,6 +1,7 @@
 import type { InlineKeyboardMarkup, LinkPreviewOptions } from "grammy/types";
 import type { AccountSummary } from "@/lib/account/manage";
 import type { AnalysisSummary } from "@/lib/agent/analyze";
+import { FOLLOW_UP_AFTER_DAYS, type FollowUp } from "@/lib/agent/follow-ups";
 import { APP_NAME } from "@/lib/brand";
 import { formatDateTime, formatUsd } from "@/lib/format";
 import type { RevokeResult } from "@/lib/gmail/oauth";
@@ -399,8 +400,19 @@ export type StatsForText = {
 /** e.g. "15 Aug", from the stats' "2026-08-15". */
 const dayText = (isoDay: string) => new Date(`${isoDay}T00:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
 
+/** The recommendation in /status: who to nudge, why, and how sure (an inference, labelled as one). */
+export function followUpLines(f: { shown: FollowUp[]; total: number }): string[] {
+  if (!f.total) return [];
+  return [
+    `💡 Worth a follow-up: no reply for ${FOLLOW_UP_AFTER_DAYS}+ days`,
+    ...f.shown.map((a) => `• ${a.company} · ${a.roleTitle}${a.jobRef ? ` (#${a.jobRef})` : ""}: ${plural(a.quietDays, "day")} since the last email`),
+    ...(f.total > f.shown.length ? [`• and ${f.total - f.shown.length} more`] : []),
+    "Companies often answer within 2–3 weeks, so a short, polite check-in can help (inference, medium confidence). Ask me for details on any of them.",
+  ];
+}
+
 /** /status: straight from the database, no AI, so it works even when the AI budget is used up. */
-export function statusText(s: StatsForText, opts: { budget?: BudgetMode; spend?: SpendForText; demo?: boolean } = {}): string {
+export function statusText(s: StatsForText, opts: { budget?: BudgetMode; spend?: SpendForText; demo?: boolean; followUps?: { shown: FollowUp[]; total: number } } = {}): string {
   if (!s.coverage.gmail && !opts.demo && s.total === 0) return NOT_CONNECTED_TEXT;
   // Open and closed are the two groups; each status belongs to exactly one.
   const group = (title: string, statuses: ApplicationStatus[]) => {
@@ -420,6 +432,7 @@ export function statusText(s: StatsForText, opts: { budget?: BudgetMode; spend?:
     ...group("Closed", CLOSED_STATUSES),
     "",
     waiting ? `${plural(waiting, "card")} waiting for your decision: /pending` : "Nothing is waiting for your decision.",
+    ...(opts.followUps?.total ? ["", ...followUpLines(opts.followUps)] : []),
     "",
     source,
     ...(opts.budget ? ["", ...budgetStatusLines(opts.budget, opts.spend)] : []),

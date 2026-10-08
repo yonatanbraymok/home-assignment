@@ -4,6 +4,7 @@ import { accountSummary, authorizeConfirmation, deleteAccount, disconnectGmail }
 import { loginLink } from "@/lib/auth/tokens";
 import { analyzePendingEmails } from "@/lib/agent/analyze";
 import { answerQuestion } from "@/lib/agent/chat";
+import { followUps } from "@/lib/agent/follow-ups";
 import { NOT_YET_READ } from "@/lib/agent/queue";
 import { signToken } from "@/lib/crypto";
 import { db } from "@/lib/db";
@@ -337,13 +338,14 @@ function registerHandlers(bot: Bot) {
     const user = await findUser(ctx.from.id);
     if (!user) return ctx.reply(NOT_REGISTERED_TEXT);
     const now = new Date();
-    const [stats, budget, byPurpose] = await Promise.all([
+    const [stats, budget, byPurpose, waitingForReply] = await Promise.all([
       READ_TOOLS.get_stats.run(db, user.id, {}) as Promise<StatsForText>,
       budgetStatus(user.id, now),
       spendByPurpose(user.id, now),
+      db.jobApplication.findMany({ where: { userId: user.id, status: "APPLIED" }, select: { company: true, roleTitle: true, jobRef: true, lastEmailAt: true, createdAt: true } }),
     ]);
     const spend = { breakdown: breakdownOf(byPurpose), forecastUsd: forecastUsd(budget.user?.spentUsd ?? 0, now) };
-    await ctx.reply(statusText(stats, { budget, spend, demo: Boolean(user.demoAt) }));
+    await ctx.reply(statusText(stats, { budget, spend, demo: Boolean(user.demoAt), followUps: followUps(waitingForReply, now) }));
   });
 
   // Any other text is a question about the user's applications.

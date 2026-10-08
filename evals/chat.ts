@@ -76,6 +76,16 @@ async function main() {
       check: (a) => assert.match(a, /can'?t|cannot|unable|not able/i),
     },
     {
+      // Requirement 2, "what it recommends": a next step grounded in the data, labelled as one.
+      q: "Which applications should I follow up on?",
+      check: (a) => {
+        assert.match(a, /Software Development Engineer|2876543/i);
+        assert.match(a, /recommend/i);
+        // Wix may be mentioned (earlier questions were about it), but not as one to follow up.
+        assert.doesNotMatch(a, /follow[- ]up[^.\n]*Wix|Wix[^.\n]*follow[- ]up/i);
+      },
+    },
+    {
       q: "Did Wix send me an offer?",
       check: (a) => {
         assert.match(a, /reject|no\b|not/i);

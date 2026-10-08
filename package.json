@@ -13,6 +13,7 @@
     "bot:dev": "tsx --env-file=.env.local scripts/telegram-poll.ts",
     "bot:setup": "tsx --env-file=.env.local scripts/telegram-setup.ts",
     "test": "tsx --test \"src/**/*.test.ts\"",
+    "evals": "tsx --env-file=.env.local scripts/run-evals.ts",
     "eval:approval": "tsx --env-file=.env.local evals/approval-safety.ts",
     "eval:classifier": "tsx --env-file=.env.local evals/classifier.ts",
     "eval:chat": "tsx --env-file=.env.local evals/chat.ts",
@@ -21,7 +22,8 @@
     "eval:dashboard": "tsx --env-file=.env.local evals/dashboard.ts",
     "eval:budget": "tsx --env-file=.env.local evals/budget.ts",
     "eval:mcp": "tsx --env-file=.env.local evals/mcp.ts",
-    "eval:demo": "tsx --env-file=.env.local evals/demo.ts"
+    "eval:demo": "tsx --env-file=.env.local evals/demo.ts",
+    "eval:bot": "tsx --env-file=.env.local evals/bot.ts"
   },
   "dependencies": {
     "@google/genai": "^2.27.0",

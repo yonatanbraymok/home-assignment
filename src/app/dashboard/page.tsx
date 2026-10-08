@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { AgentChat } from "./agent-chat";
 import { ApplicationsCard, type ApplicationRow } from "./applications-table";
 import { WaitingBadge, describeChange } from "./proposal-badges";
+import { WaitingSlides } from "./waiting-slides";
 
 // The overview, as a bento grid of cards: budget and totals across the top, the pipeline on the
 // left, and on the right what waits for the owner and a chat with the agent. Read-only: approving
@@ -168,29 +169,31 @@ function GettingStarted({ steps }: { steps: OverviewData["gettingStarted"] }) {
   );
 }
 
-const MAX_WAITING_SHOWN = 4;
-
 function WaitingCard({ waiting }: { waiting: OverviewData["waiting"] }) {
-  const more = waiting.length - MAX_WAITING_SHOWN;
+  const n = waiting.length;
   return (
     <Card id="waiting" className="scroll-mt-20">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           Waiting for your approval
-          {waiting.length > 0 && <Badge className="tabular-nums">{waiting.length}</Badge>}
+          {n > 0 && <Badge className="tabular-nums">{n}</Badge>}
         </CardTitle>
-        <CardDescription>The agent&apos;s proposals. Only you can approve them, in Telegram: nothing changes until you do.</CardDescription>
+        <CardDescription>
+          {n === 0
+            ? "The agent's proposals appear here until you decide on them in Telegram."
+            : `${n === 1 ? "1 card is" : `${n} cards are`} waiting in Telegram. Nothing changes until you approve.`}
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        {waiting.length === 0 ? (
+        {n === 0 ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <CircleCheck className="size-4 text-emerald-600 dark:text-emerald-400" />
             Nothing is waiting for you.
           </p>
         ) : (
-          <ul className="flex flex-col divide-y">
-            {waiting.slice(0, MAX_WAITING_SHOWN).map((p) => (
-              <li key={p.id} className="flex flex-col gap-1.5 py-3 first:pt-0 last:pb-0">
+          <WaitingSlides
+            slides={waiting.map((p) => (
+              <div key={p.id} className="flex flex-col gap-1.5 pr-px">
                 <div className="flex items-baseline justify-between gap-2">
                   <p className="truncate font-medium">
                     {p.applicationId ? (
@@ -209,13 +212,12 @@ function WaitingCard({ waiting }: { waiting: OverviewData["waiting"] }) {
                 </p>
                 <blockquote className="line-clamp-2 border-l-2 border-primary/60 pl-2.5 text-sm">“{p.evidenceQuote}”</blockquote>
                 <WaitingBadge proposal={p} />
-              </li>
+              </div>
             ))}
-          </ul>
+          />
         )}
-        {more > 0 && <p className="mt-3 text-xs text-muted-foreground">And {more} more: /pending in Telegram shows them all.</p>}
       </CardContent>
-      {waiting.length > 0 && (
+      {n > 0 && (
         <CardFooter>
           <TelegramButton variant="outline" />
         </CardFooter>

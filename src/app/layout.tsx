@@ -1,18 +1,12 @@
 import type { Metadata } from "next";
-import { DM_Sans, Geist_Mono, Schibsted_Grotesk } from "next/font/google";
+import { Geist_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import { APP_NAME } from "@/lib/brand";
 import "./globals.css";
 
-// Body text in DM Sans; headings in Schibsted Grotesk, upright and firm.
-const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
+// One friendly geometric sans for everything, headings included.
+const jakarta = Plus_Jakarta_Sans({
+  variable: "--font-jakarta",
   subsets: ["latin"],
-});
-
-const grotesk = Schibsted_Grotesk({
-  variable: "--font-grotesk",
-  subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
 });
 
 const geistMono = Geist_Mono({
@@ -28,7 +22,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     // Smooth scrolling for the landing page's anchors; Next turns it off during navigation.
-    <html lang="en" data-scroll-behavior="smooth" className={`${dmSans.variable} ${grotesk.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang="en" data-scroll-behavior="smooth" className={`${jakarta.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

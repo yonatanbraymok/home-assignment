@@ -45,3 +45,6 @@ Eshkol marketing Ai Fullstack Home Assignment  - agent.pdf
 PROJECT_CONTEXT.md
 # prisma client (generated)
 /src/generated/prisma
+
+# design reference export (local only)
+/figmadesign/

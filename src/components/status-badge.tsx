@@ -3,25 +3,25 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { STATUS_DESCRIPTION, STATUS_LABEL } from "@/lib/proposals/rules";
 
-// Semantic colours: zinc = applied, waiting for a reply; amber = interview; emerald = offer;
-// rose = rejected. Assessment, not in the palette brief, takes the accent's indigo.
+// Semantic colours in the product's palette: soft ink = applied, waiting for a reply; lilac =
+// assessment; lime = interview; violet = offer; rose = rejected (a "no" should read as one).
 export const STATUS_STYLE: Record<ApplicationStatus, string> = {
-  APPLIED: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-  ASSESSMENT: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
-  INTERVIEW: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  OFFER: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  APPLIED: "bg-ink/[0.07] text-ink/70 dark:bg-white/10 dark:text-white/70",
+  ASSESSMENT: "bg-lilac text-brand-dark dark:bg-brand/25 dark:text-[#cfc6ff]",
+  INTERVIEW: "bg-lime text-ink",
+  OFFER: "bg-brand text-white",
   REJECTED: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
   WITHDRAWN: "border-border bg-transparent text-muted-foreground",
 };
 
-/** The same hues as dots (timeline, activity). */
+/** The same hues as dots and bars (timeline, pipeline). */
 export const STATUS_DOT: Record<ApplicationStatus, string> = {
-  APPLIED: "bg-zinc-400 dark:bg-zinc-500",
-  ASSESSMENT: "bg-indigo-500",
-  INTERVIEW: "bg-amber-500",
-  OFFER: "bg-emerald-500",
+  APPLIED: "bg-ink/25 dark:bg-white/30",
+  ASSESSMENT: "bg-[#9d8cfa]",
+  INTERVIEW: "bg-[#c2dc45]",
+  OFFER: "bg-brand",
   REJECTED: "bg-rose-500",
-  WITHDRAWN: "bg-zinc-300 dark:bg-zinc-600",
+  WITHDRAWN: "bg-ink/10 dark:bg-white/15",
 };
 
 export function StatusBadge({ status, className }: { status: ApplicationStatus; className?: string }) {

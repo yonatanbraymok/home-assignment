@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Prisma client output (generated, gitignored):
     "src/generated/**",
+    // The Figma export the design follows (a reference, not app code):
+    "figma design/**",
   ]),
 ]);
 

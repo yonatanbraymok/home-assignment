@@ -92,7 +92,7 @@ function TimelineItem({ item: t, latest, gmailAddress, now }: { item: DetailData
   return (
     <li className="relative pb-10 pl-6 last:pb-0">
       <span
-        className={cn("absolute top-1 -left-[7px] size-3.5 rounded-full ring-4 ring-background", newStatus ? STATUS_DOT[newStatus] : "bg-zinc-300 dark:bg-zinc-600")}
+        className={cn("absolute top-1 -left-[7px] size-3.5 rounded-full ring-4 ring-card", newStatus ? STATUS_DOT[newStatus] : STATUS_DOT.WITHDRAWN)}
         aria-hidden
       />
       <div className="flex flex-wrap items-center gap-2 text-sm">

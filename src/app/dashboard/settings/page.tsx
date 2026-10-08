@@ -172,9 +172,9 @@ function BudgetRow({ label, status }: { label: string; status: ScopeStatus }) {
 
 function GmailStatus({ user }: { user: CurrentUser }) {
   if (user.gmailSyncError) return <Badge variant="destructive">Needs reconnecting</Badge>;
-  if (user.demo) return <Badge className="bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">Demo</Badge>;
+  if (user.demo) return <Badge className="bg-lilac text-brand-dark dark:bg-brand/25 dark:text-[#cfc6ff]">Demo</Badge>;
   if (!user.gmailAddress) return <Badge variant="outline">Not connected</Badge>;
-  return <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">Connected</Badge>;
+  return <Badge className="bg-lime text-ink">Connected</Badge>;
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

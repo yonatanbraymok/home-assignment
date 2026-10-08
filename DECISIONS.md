@@ -24,20 +24,10 @@ How the agent was built, and why. How to try it, deploy it and configure it is i
 
 ## 2. Why an agent is the right tool
 
-- **The input is unstructured language, and rules break on it.**
-  - "We'll keep your resume on file" is a rejection.
-  - "Unfortunately we need to reschedule your interview" is not.
-  - A Workday email comes from `myworkday.com`, and the company is named only in the body.
-
-  Keyword rules can't tell these apart; a language model can, and it can explain why.
+- **The input is unstructured language, and rules break on it.** "We'll keep your resume on file" is a rejection; "Unfortunately we need to reschedule your interview" is not. A Workday email comes from `myworkday.com`, and the company is named only in the body. Keyword rules can't tell these apart; a language model can, and it can explain why.
 - **The output needs judgment and an explanation:** which of several applications an email belongs to, why the status changed, and how sure it is.
-- **The risky part is not left to the model.**
-  - The model only *proposes*.
-  - Code checks the evidence: the quoted sentence must appear verbatim in the email, matching is done by rules, and confidence is capped by those checks.
-  - The tracker changes only after the owner taps Approve. The model has no write tools.
-- **Where there's no LLM:**
-  - Counts and stats are SQL, and approvals are plain code.
-  - A free keyword and domain prefilter decides which emails are worth a model call at all.
+- **The risky part is not left to the model.** The model only *proposes*. Code checks the evidence (the quoted sentence must appear verbatim in the email, matching is done by rules, confidence is capped by those checks), and the tracker changes only after the owner taps Approve. The model has no write tools.
+- **Where there's no LLM:** counts and stats are SQL, approvals are plain code, and a free keyword and domain prefilter decides which emails are worth a model call at all.
 
 ## 3. How each requirement is met
 

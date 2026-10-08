@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AnalysisSummary } from "@/lib/agent/analyze";
 import { budgetMode, scopeStatus, questionReserveUsd } from "@/lib/llm/budget-policy";
-import { NOT_CONNECTED_TEXT, analysisText, budgetNoticeText, budgetPausedText, budgetStatusLines, chatLimitText, connectReply, dashboardLinkReply, deleteConfirmText, deleteDoneText, reviewReadyText, statusText, stillReadingText, syncReplyText, welcomeText, type StatsForText } from "./messages";
+import { NOT_CONNECTED_TEXT, gmailConnectedText, analysisText, budgetNoticeText, budgetPausedText, budgetStatusLines, chatLimitText, connectReply, dashboardLinkReply, deleteConfirmText, deleteDoneText, reviewReadyText, statusText, stillReadingText, syncReplyText, welcomeText, type StatsForText } from "./messages";
 
 const stats = (gmail: string | null, total: number): StatsForText => ({
   total,
@@ -76,7 +76,7 @@ test("dashboard and connect links come as a button, like Open email; a local htt
 test("the welcome has three steps for newcomers and a short menu for returning users", () => {
   const fresh = welcomeText({ firstName: "Dana", isNew: true, gmailAddress: null, demo: false });
   assert.match(fresh, /^Hi Dana 👋/);
-  assert.match(fresh, /1\. \/connect[^\n]*\n2\. \/sync[^\n]*\n3\. Review/);
+  assert.match(fresh, /1\. \/connect[^\n]*\n2\. I read your job emails[^\n]*\/sync[^\n]*\n3\. Review/);
   assert.match(fresh, /\/demo/);
   const back = welcomeText({ firstName: "Dana", isNew: false, gmailAddress: "dana@gmail.com", demo: false });
   assert.match(back, /^Welcome back, Dana 👋\n\nI'm reading dana@gmail\.com/);
@@ -153,4 +153,10 @@ test("threshold notices: amounts, month, what changes, and an admin version", ()
   );
   assert.match(budgetNoticeText({ scope: "service", pct: 50, audience: "admin" }, scopeStatus("service", 12.6, 25, reserve), resetsOn, true), /^Admin: the shared AI budget is at 50% for October \(\$12\.60 of \$25\.00\)/);
   assert.match(budgetNoticeText({ scope: "service", pct: 100, audience: "user" }, scopeStatus("service", 24.99, 25, reserve), resetsOn, true), /^⏸ The shared AI budget for all users is used up for October\. I won't answer questions or read new emails until 1 Nov/);
+});
+
+test("after connecting, the bot says reading starts on its own, and /sync only starts it sooner", () => {
+  const text = gmailConnectedText("dana@gmail.com");
+  assert.match(text, /within 5 minutes I start reading your job emails from the last 60 days, on my own/);
+  assert.match(text, /Want me to start right now\? Send \/sync/);
 });

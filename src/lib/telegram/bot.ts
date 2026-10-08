@@ -67,9 +67,10 @@ const CONNECT_LINK_TTL_SECONDS = 600;
 const SYNC_COOLDOWN_MS = 60_000;
 const ANALYZE_PER_SYNC = 10;
 const MAX_PENDING_RESENT = 10;
-// The demo reads its sample inbox inside the update; the webhook allows 55 s.
+// The demo reads its sample inbox inside the update; the webhook allows 55 s. On a slow day the
+// rest is read by the 5-minute sync, and the summary follows then.
 const DEMO_READ_LIMIT = 20;
-const DEMO_READ_MS = 40_000;
+const DEMO_READ_MS = 45_000; // the last email may still take ~5 s, then the replies, all within 55 s
 
 let bot: Bot | undefined;
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { ArrowUpRight, CircleCheck, Circle, Send, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, CircleCheck, Send, TriangleAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,7 @@ type OverviewData = Awaited<ReturnType<typeof getOverview>>;
 
 async function Overview() {
   const data = await getOverview();
-  const { user, applications, gettingStarted } = data;
+  const { user, applications } = data;
   const rows: ApplicationRow[] = applications.map((a) => ({
     id: a.id,
     company: a.company,
@@ -48,16 +48,13 @@ async function Overview() {
         <h1 className="text-2xl font-semibold tracking-tight">Applications</h1>
         <p className="text-sm text-muted-foreground">Kept up to date from your inbox. Every change is approved by you, in Telegram.</p>
       </div>
-      <GmailNotice user={user} demo={gettingStarted.demo} />
+      <GmailNotice user={user} />
 
       {/* Phones get one column in reading order; from lg the pipeline spans two columns and the
-          right column stacks what waits for you above the chat with the agent, which takes the rest. */}
+          right column has what waits for you above the chat with the agent, which takes the rest. */}
       <div className="grid gap-4 lg:grid-cols-3 lg:grid-rows-[auto_auto_1fr]">
         <SummaryCard data={data} className="lg:col-span-3" />
-        <div className="flex flex-col gap-4 lg:col-start-3 lg:row-start-2">
-          <GettingStarted steps={gettingStarted} />
-          <WaitingCard waiting={data.waiting} />
-        </div>
+        <WaitingCard waiting={data.waiting} className="lg:col-start-3 lg:row-start-2" />
         <ApplicationsCard rows={rows} className="lg:col-span-2 lg:col-start-1 lg:row-span-2 lg:row-start-2" />
         <AgentChat
           initial={data.chat.map((t) => ({ ...t, at: t.at.toISOString() }))}
@@ -136,43 +133,10 @@ function BudgetMonitor({ budget, forecastUsd }: { budget: OverviewData["budget"]
 
 // ---------- Right column ----------
 
-function GettingStarted({ steps }: { steps: OverviewData["gettingStarted"] }) {
-  const items = [
-    { done: steps.gmailConnected, label: "Connect Gmail", hint: "Send /connect to the bot (or /demo to use sample emails)." },
-    { done: steps.approvedSomething, label: "Approve your first card", hint: "Cards arrive in Telegram; nothing changes until you tap Approve." },
-    { done: steps.askedQuestion, label: "Ask the agent a question", hint: "Below, or in Telegram. For example: \"Which applications are waiting for a reply?\"" },
-  ];
-  if (items.every((i) => i.done)) return null;
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Getting started</CardTitle>
-        <CardDescription>Three steps. This card goes once they&apos;re done.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ol className="flex flex-col gap-2.5">
-          {items.map((item) => (
-            <li key={item.label} className="flex gap-2.5 text-sm">
-              {item.done ? <CircleCheck className="mt-0.5 size-4 shrink-0 text-primary" /> : <Circle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />}
-              <span>
-                <span className={item.done ? "text-muted-foreground line-through" : "font-medium"}>{item.label}</span>
-                {!item.done && <span className="block text-muted-foreground">{item.hint}</span>}
-              </span>
-            </li>
-          ))}
-        </ol>
-      </CardContent>
-      <CardFooter>
-        <TelegramButton variant="default" />
-      </CardFooter>
-    </Card>
-  );
-}
-
-function WaitingCard({ waiting }: { waiting: OverviewData["waiting"] }) {
+function WaitingCard({ waiting, className }: { waiting: OverviewData["waiting"]; className?: string }) {
   const n = waiting.length;
   return (
-    <Card id="waiting" className="scroll-mt-20">
+    <Card id="waiting" className={cn("scroll-mt-20", className)}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           Waiting for your approval
@@ -238,8 +202,8 @@ function TelegramButton({ variant }: { variant: "default" | "outline" }) {
   );
 }
 
-function GmailNotice({ user, demo }: { user: CurrentUser; demo: boolean }) {
-  if (demo) {
+function GmailNotice({ user }: { user: CurrentUser }) {
+  if (user.demo) {
     return (
       <Alert>
         <AlertTitle>Demo mode</AlertTitle>

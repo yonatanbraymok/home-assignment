@@ -196,21 +196,6 @@ export async function recentChatFor(userId: string, take = 6) {
   });
 }
 
-export async function gettingStartedFor(userId: string) {
-  const [user, applications, questions] = await Promise.all([
-    db.user.findUnique({ where: { id: userId }, select: { gmailAddress: true, demoAt: true, mcpTokenHash: true } }),
-    db.jobApplication.count({ where: { userId } }),
-    db.actionLog.count({ where: { userId, action: "CHAT_ANSWERED" } }),
-  ]);
-  return {
-    gmailConnected: Boolean(user?.gmailAddress || user?.demoAt),
-    demo: Boolean(user?.demoAt),
-    approvedSomething: applications > 0,
-    askedQuestion: questions > 0,
-    hasMcpToken: Boolean(user?.mcpTokenHash),
-  };
-}
-
 /** Counts for the settings page. */
 export async function accountCountsFor(userId: string) {
   const [applications, jobEmails] = await Promise.all([

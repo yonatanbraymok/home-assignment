@@ -84,7 +84,7 @@ npm run dev                  # http://localhost:3000
 npm run bot:dev              # the bot, by long polling (it refuses while a webhook is set)
 ```
 
-Locally, `/dashboard` and `/connect` put their link in the message text: Telegram only accepts https links in buttons.
+To open the local dashboard, run `npm run dev:login`: it prints a one-time sign-in link for `localhost` (as the admin, or `npm run dev:login -- <telegram id>`). The deployed bot's `/dashboard` always links to the deployed site. When the bot itself runs locally, `/dashboard` and `/connect` put their link in the message text, because Telegram only accepts https links in buttons.
 
 ## Deploy
 

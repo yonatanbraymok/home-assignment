@@ -12,6 +12,7 @@
     "db:diff": "prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script",
     "bot:dev": "tsx --env-file=.env.local scripts/telegram-poll.ts",
     "bot:setup": "tsx --env-file=.env.local scripts/telegram-setup.ts",
+    "dev:login": "tsx --env-file=.env.local scripts/dev-login.ts",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "evals": "tsx --env-file=.env.local scripts/run-evals.ts",
     "eval:approval": "tsx --env-file=.env.local evals/approval-safety.ts",
